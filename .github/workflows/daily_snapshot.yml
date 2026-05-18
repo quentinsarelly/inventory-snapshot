@@ -1,0 +1,42 @@
+name: Daily Inventory Snapshot
+
+on:
+  schedule:
+    - cron: "0 11 * * *"  # 6am ET (UTC-5) / 7am EDT (UTC-4) — adjust seasonally
+  workflow_dispatch:       # allow manual trigger from GitHub UI
+
+jobs:
+  snapshot:
+    runs-on: ubuntu-latest
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: pip
+
+      - name: Install dependencies
+        run: pip install -r requirements.txt
+
+      - name: Run all connectors
+        env:
+          DATABASE_URL:            ${{ secrets.DATABASE_URL }}
+          SHOPIFY_STORE:           ${{ secrets.SHOPIFY_STORE }}
+          SHOPIFY_ACCESS_TOKEN:    ${{ secrets.SHOPIFY_ACCESS_TOKEN }}
+          AMAZON_LWA_APP_ID:       ${{ secrets.AMAZON_LWA_APP_ID }}
+          AMAZON_LWA_CLIENT_SECRET: ${{ secrets.AMAZON_LWA_CLIENT_SECRET }}
+          AMAZON_REFRESH_TOKEN_US: ${{ secrets.AMAZON_REFRESH_TOKEN_US }}
+          AMAZON_REFRESH_TOKEN_MX: ${{ secrets.AMAZON_REFRESH_TOKEN_MX }}
+          AMAZON_AWS_ACCESS_KEY:   ${{ secrets.AMAZON_AWS_ACCESS_KEY }}
+          AMAZON_AWS_SECRET_KEY:   ${{ secrets.AMAZON_AWS_SECRET_KEY }}
+          AMAZON_ROLE_ARN:         ${{ secrets.AMAZON_ROLE_ARN }}
+          TIKTOK_APP_KEY:          ${{ secrets.TIKTOK_APP_KEY }}
+          TIKTOK_APP_SECRET:       ${{ secrets.TIKTOK_APP_SECRET }}
+          TIKTOK_ACCESS_TOKEN:     ${{ secrets.TIKTOK_ACCESS_TOKEN }}
+          US_3PL_BASE_URL:         ${{ secrets.US_3PL_BASE_URL }}
+          US_3PL_API_KEY:          ${{ secrets.US_3PL_API_KEY }}
+          MX_3PL_BASE_URL:         ${{ secrets.MX_3PL_BASE_URL }}
+          MX_3PL_API_KEY:          ${{ secrets.MX_3PL_API_KEY }}
+        run: python run_all.py

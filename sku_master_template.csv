@@ -1,0 +1,148 @@
+internal_sku,display_name,category,is_bundle
+SCL-001,Gloss + Shimmer 2-en-1 Lychee Mojito & Dazzling flakes,Lips,FALSE
+SCL-002,Gloss + Shimmer 2-en-1 Peony Carajillo & Rose Quartz flakes,Lips,FALSE
+SCL-003,Gloss + Shimmer 2-en-1 Apricot Honey Bourbon & Vermeil 24K,Lips,FALSE
+SCL-011,Lip Balm Charm Fresh Honey Lavender,Lips,FALSE
+SCL-012,Cosmetiquera Off-white,Accesories,FALSE
+SCL-0033,Máscara Waterproof Long Cow Lashes,Eyes,FALSE
+SCL-0034,Desmaquillante Waterproof Lavadero,Eyes,FALSE
+SCL-0035,Combo Máscara Waterproof Long Cow Lashes + Desmaquillante Lavadero,Kits,TRUE
+SCL-0043,Mini fragancia Vato Guapo,Fragrance,FALSE
+SCL-0050,Cosmetiquera Blush,Accesories,FALSE
+SCL-0068,Duo Telenovela Lipstick + Gloss Rubili,Lips,FALSE
+SCL-0079,Paleta La Mil Sombras + Brocha Duo,Eyes,FALSE
+SCL-0084,Enchinador Extra Wide Opening,Eyes,FALSE
+SCL-0088,Mini Máscara Waterproof Long Cow Lashes,Eyes,FALSE
+SCL-0095,Delineador Ultra Fine Needle,Eyes,FALSE
+SCL-0098,Professional Lip Combo Creamy Beetroot Fettuccine,Lips,FALSE
+SCL-0099,Professional Lip Combo Tamarind Reduction Ravioli,Lips,FALSE
+SCL-0100,Professional Lip Combo Spicy Eggplant Penne,Lips,FALSE
+SCL-0101,Professional Lip Combo Creamy Jamaica Farfalle,Lips,FALSE
+SCL-0102,Professional Lip Combo Tatemado Spicy Fusilli,Lips,FALSE
+SCL-0103,Delineador Individual (Lip Combo) Creamy Beetroot Fettuccine,Lips,FALSE
+SCL-0104,Labial Individual (Lip Combo) Creamy Beetroot Fettuccine,Lips,FALSE
+SCL-0106,Delineador Individual (Lip Combo) Tamarind Reduction Ravioli,Lips,FALSE
+SCL-0107,Labial Individual (Lip Combo) Tamarind Reduction Ravioli,Lips,FALSE
+SCL-0109,Delineador Individual (Lip Combo) Spicy Eggplant Penne,Lips,FALSE
+SCL-0110,Labial Individual (Lip Combo) Spicy Eggplant Penne,Lips,FALSE
+SCL-0112,Delineador Individual (Lip Combo) Tatemado Spicy Fusilli,Lips,FALSE
+SCL-0113,Labial Individual (Lip Combo) Tatemado Spicy Fusilli,Lips,FALSE
+SCL-0116,Duo Paleta de Sombras Flaky,Eyes,FALSE
+SCL-0117,Máscara Waterproof Volume Horse Lashes,Eyes,FALSE
+SCL-0122,Duo Telenovela Tint + Gloss Hortensia,Lips,FALSE
+SCL-0123,Duo Telenovela Tint + Gloss Lili,Lips,FALSE
+SCL-0124,Duo Telenovela Tint + Gloss Florencia,Lips,FALSE
+SCL-0125,Mini Cosmetiquera Blush,Accesories,FALSE
+SCL-0126,Mini Cosmetiquera Baby Blue,Accesories,FALSE
+SCL-0129,Combo Máscara Waterproof Volume Horse Lashes + Desmaquillante Lavadero,Kits,TRUE
+SCL-0130,Kit 2 Máscaras: Máscara Long Cow Lashes + Máscara Volume Horse Lashes,Kits,TRUE
+SCL-0132,Combo 2 Mascaras (Cow Lashes + Horse Lashes) + Desmaquillante (exclu TTS USA),Kits,TRUE
+SCL-0133,Mini Lip Oil Colorín Colorado,Lips,FALSE
+SCL-0134,New Cherry on Top Glitter Caramel Churro Crumble,Eyes,FALSE
+SCL-0135,New Cherry on Top Glitter Raspberry Ginger Sorbet,Eyes,FALSE
+SCL-0136,Fragrancia Vato Guapo Premium,Fragrance,FALSE
+SCL-0142,Kit Chapulin Colorado - Mini Lip Oil Colorín colorado + Cardio baby bag,Kits,TRUE
+SCL-0147,Duo Telenovela Tint + Gloss Rosela,Lips,FALSE
+SCL-0151,La Mil Sombras Rosa,Eyes,FALSE
+SCL-0155,Mini Desmaquillante waterproof Lavadero,Eyes,FALSE
+SCL-0156,Mini Máscara Waterproof Volume Horse Lashes,Eyes,FALSE
+SCL-0168,Kit Enchinador Extra Wide Opening + Máscara Waterproof Long Cow Lashes,Kits,TRUE
+SCL-0169,Kit Enchinador Extra Wide Opening + Máscara Waterproof Volume Horse Lashes,Kits,TRUE
+SCL-0184,Delineador Ultra Fine Needle Café,Eyes,FALSE
+SCL-0191,Kit Mirada iconica: Enchinador + Eyeliner + Pads + Mini Cow + Mini Desmaquillante,Kits,TRUE
+SCL-0192,Kit Eye Candy: Mini Cow + Mini Horse + Mini Desm + Duo Paleta + 2 New Glitters,Kits,TRUE
+SCL-0193,Kit Labios de Loba: Telenovela Tint + Delineador labios Florencia - Spicy,Kits,TRUE
+SCL-0194,Kit Labios de Loba: Telenovela Tint + Delineador labios (Hortensia - Beetroot),Kits,TRUE
+SCL-0195,Kit Labios de Loba: Telenovela Tint + Delineador labios (Lili - Tatemado),Kits,TRUE
+SCL-0196,Kit Charm Ajolote + Lip Balm Charm,Kits,FALSE
+SCL-0197,Kit Labios de Loba: Telenovela Lipstick + Delineador labios (Tatemado),Kits,TRUE
+SCL-0199,New Cherry on Top Glitter Champagne Panna Cotta,Eyes,FALSE
+SCL-0200,Máscara Waterproof Long Cow Lashes Café,Eyes,FALSE
+SCL-0201,Kit Always on: Máscara Long Cow Lashes + Desmaquillante Lavadero,Kits,FALSE
+SCL-0202,Kit Always on: Máscara Volume Horse Lashes + Desmaquillante Lavadero,Kits,FALSE
+SCL-0203,Kit Always on: 2 Máscaras,Kits,FALSE
+SCL-0204,Kit Always on: Máscara Long Cow Lashes + Enchinador,Kits,FALSE
+SCL-0205,Kit Always on: Delineador + Enchinador + Mini Cow + Mini Desm + 3 pads,Kits,FALSE
+SCL-0206,Duo Paleta de Sombras Matte,Eyes,FALSE
+SCL-0207,Delineador Individual (Lip Combo) Creamy Jamaica Farfalle,Lips,FALSE
+SCL-0208,Labial Individual (Lip Combo) Creamy Jamaica Farfalle,Lips,FALSE
+SCL-0209,Iluminador Individual (Lip Combo) Creamy Jamaica Farfalle,Lips,FALSE
+SCL-0210,Kit Mirada iconica: Enchinador + Eyeliner + Pads + Mini Horse + Mini Desmaquillante,Kits,TRUE
+SCL-0211,Mini Charm Kit Lashes - Mini Cow + Mini Horse + Mini Desmaquillante,Kits,TRUE
+SCL-0212,Mini Charm Kit Sparkle - Duo Flaky + New Glitter Rasperry,Kits,TRUE
+SCL-0213,Kit Discovery Minis - Mini Cow + Mini Horse + Mini Desmaquillante,Kits,TRUE
+SCL-0214,Kit Las Mañanitas - Mini Cosmetiquera Blush + Cow + Horse + Desm + Lip Combo Tat. + Paleta,Kits,TRUE
+SCL-0215,Kit Heroes - Mascara Long Cow Lashes + Duo Telenovela Lipstick,Kits,TRUE
+SCL-0216,Mini Cosmetiquera Tequila Patrón,Accesories,FALSE
+SCL-0218,Kit Iconic Gaze US: Enchinador + Eyeliner + Mini Cow + Mini Desmaquillante,Kits,TRUE
+SCL-0219,Kit Iconic Gaze US: Enchinador + Eyeliner + Mini Horse + Mini Desmaquillante,Kits,TRUE
+SCL-0220,Kit Las Mañanitas - Mini Cosmetiquera Baby Blue + Cow + Horse + Desm + Lip Combo Tat. + Paleta,Kits,TRUE
+SCL-0221,Kit Mirada iconica (sin Eyeliner): Enchinador + Pads + Mini Cow + Mini Desmaquillante,Kits,TRUE
+SCL-0222,Kit Mirada iconica (sin Eyeliner): Enchinador + Pads + Mini Horse + Mini Desmaquillante,Kits,TRUE
+SCL-0223,Lip Balm Charm - Edicion especial Tequila Patron,Lips,FALSE
+SAR-0262,Cargo Tote Black,Bags,FALSE
+SAR-1298,Gorra Tequila Patrón,Accesories,FALSE
+SAR-0840,Cardio Baby Bag Red,Accesories,FALSE
+SAR-0962,Cargo Tote 100% Piel de nopal Black,Bags,FALSE
+SAR-0966,Wabi Tote Bag Black,Bags,FALSE
+SAR-0967,Wabi Tote Bag Beige,Bags,FALSE
+SAR-1036,The Essential Backpack Black,Bags,FALSE
+SAR-1037,The Essential Backpack Beige,Bags,FALSE
+SAR-1113,Wabi Bum Bag Black,Bags,FALSE
+SAR-1212,Kit Wabi Bum Bag Black + Cardio Baby Bag Red,Kits,TRUE
+SAR-1217,Wabi Bum Bag Beige,Bags,FALSE
+SAR-1222,Kit Wabi Bum Bag Beige + Cardio Baby Bag Red,Kits,TRUE
+SAR-1239,Cargo Tote Beige,Bags,FALSE
+SAR-1240,Cargo Tote 100% Piel de nopal Café,Bags,FALSE
+SAR-1266,Mega Wabi Bum Bag Black,Bags,FALSE
+SAR-1267,Mega Wabi Bum Bag Beige,Bags,FALSE
+SAR-1271,Kit Mega Wabi Bum Bag Black + Cardio Baby Bag,Kits,TRUE
+SAR-1272,Kit Mega Wabi Bum Bag Beige + Cardio Baby Bag,Kits,TRUE
+SAR-1290,Charm Ajolote Frambueso + Huevo,Accesories,FALSE
+SCL-0080,Pads,Makeup,FALSE
+SCL-0160,KIT MAKEUP RUTINA OJOS,Kits,TRUE
+SCL-0170,KIT MAKEUP DEGUSTACIÓN,Kits,TRUE
+SCL-010,LIP COMBO 5 EN 1 - Spicy Eggplant Penne,Lips,FALSE
+SCL-008,LIP COMBO 5 EN 1 - Creamy Beetroot Fettuccine,Lips,FALSE
+SAR-1289,KIT CORAZÓN BRILLOSO,Kits,TRUE
+SCL-005,GLITTER CHERRY ON TOP - OFERTA 2x1 - Raspberry Ginger Sorbet,Eyes,FALSE
+SCL-009,LIP COMBO 5 EN 1 - Tamarind Reduction Ravioli,Lips,FALSE
+SCL-007,GLITTER CHERRY ON TOP - OFERTA 2x1 - Caramel Churro Crumble,Eyes,FALSE
+SCL-004,GLITTER CHERRY ON TOP - OFERTA 2x1 - Champagne Panna Cotta,Eyes,FALSE
+SCL-0164,KIT MAKEUP RUTINA PESTAÑAS,Kits,TRUE
+SAR-1288,KIT OJOS DE AMOR,Kits,TRUE
+SAR-1285,KIT CARTAS + MÁSCARA,Kits,TRUE
+SAR-1268,WABI TOTE BAG SHEER - Blush,Bags,FALSE
+SAR-1286,KIT DIARIO DE GRATITUD + MÁSCARA,Kits,TRUE
+SCL-0013,KIT 4x3 GLITTERS - 4 tonos de Glitter,Kits,TRUE
+SAR-0970,EVERYDAY BAG - Amarillo Palacio (con asa de piel y cadena) - Edición limitada,Bags,FALSE
+SAR-1269,WABI TOTE BAG SHEER - Blush con Mini Cosmetiquera Blush,Bags,FALSE
+SAR-1184,MONOGRAM EARRINGS - Par de Aretes,Jewelry,FALSE
+SAR-0931,ACAPULCO SUNGLASSES - Off-white,Sunglasses,FALSE
+SAR-1225,SEOUL SUNGLASSES - Baby Blue,Sunglasses,FALSE
+SAR-1224,SEOUL SUNGLASSES - Café,Sunglasses,FALSE
+SAR-1270,WABI TOTE BAG SHEER - Blush con Mini Cosmetiquera Baby Blue,Bags,FALSE
+SCL-006,GLITTER CHERRY ON TOP - OFERTA 2x1 - Pistachio Caramelized Fig Tart,Eyes,FALSE
+SCL-0075,ESPEJO SARELLY PLATEADO - Plateado,Accesories,FALSE
+SAR-1038,MONOGRAM BAG CHARM - Plateada,Bags,FALSE
+SAR-1077,ALEX BAG - Cherry,Bags,FALSE
+SAR-1063,MILAN GLASSES (GRADUADOS) - Black / Ópticos (mica transparente),Sunglasses,FALSE
+SAR-1059,MILAN SUNGLASSES - Black,Sunglasses,FALSE
+SCL-0105,ILUMINADOR INDIVIDUAL - Creamy Beetroot Fettuccine Iluminador,Lips,FALSE
+SAR-0929,BERLIN SUNGLASSES - Gris Tortoise,Sunglasses,FALSE
+SCL-0165,KIT MAKEUP LOS FAVORITOS,Kits,TRUE
+SAR-1214,EVERYDAY ENVELOPE LA MIL SOMBRAS - Plata Espejo,Bags,FALSE
+SAR-1076,ALEX BAG - Black,Bags,FALSE
+SAR-0730,CHUNKY BRACELET - Plateado / 16.5cm,Jewelry,FALSE
+SCL-0014,KIT PR LANZAMIENTO MAKEUP SARELLY - Caja reutilizable,Kits,TRUE
+SAR-1244,SEOUL SUNGLASSES (GRADUADOS) - Baby Blue,Sunglasses,FALSE
+SAR-1213,ENVELOPE LAPICERA LA MIL SOMBRAS - Plata Espejo,Bags,FALSE
+SAR-0996,SUNSET RING - Plata y vermeil / Talla 6,Jewelry,FALSE
+SAR-0203,EVERYDAY ENVELOPE - Medium / Baby Blue,Bags,FALSE
+SAR-0223,EVERYDAY ENVELOPE - Medium / Beige,Bags,FALSE
+SAR-0208,EVERYDAY ENVELOPE - Medium / Black,Bags,FALSE
+SAR-0319,BUCKET HAT - Florencia,Accesories,FALSE
+SAR-0320,BUCKET HAT - Red,Accesories,FALSE
+TTS-0020,EYES ROUTINE KIT,Eyes,TRUE
+TTS-0021,SARELLY'S BEST HOLIDAY KIT,Eyes,TRUE
+TTS-0022,MINI GLAM DUO - TTS EXCLUSIVE SARELLY x FHI HEAT,Eyes,TRUE
