@@ -2,18 +2,26 @@
 
 ## Blockers (must fix before first live write)
 
-- [ ] **Fix Supabase IPv6 connectivity**
-  WSL2 resolves the Supabase host to an IPv6 address it can't reach.
-  Fix: switch to the Supabase connection pooler URL (port 6543) in `.env` —
-  it resolves to IPv4. Get it from: Supabase dashboard → Project Settings → Database → Connection pooling.
+- [x] **Fix Supabase IPv6 connectivity**
+  Replaced psycopg2 with `supabase-py` (REST over HTTPS/port 443 → IPv4 via Cloudflare).
+  Added `SUPABASE_URL` + `SUPABASE_SERVICE_KEY` to `.env`. Created `refresh_inventory_unified()`
+  RPC function in Supabase for the materialized view refresh.
 
-- [ ] **First live write**
-  Once connectivity is fixed, run without the flag and confirm rows land in Supabase:
-  ```bash
-  source /home/quent/sarelly-venv/bin/activate
-  python run_all.py
-  ```
-  Then check `inventory_snapshots` in the Supabase table editor.
+- [x] **First live write (partial)**
+  Shopify US (183 rows), Shopify MX (958 rows), ShipHero/mx_3pl (682 rows) wrote successfully.
+  Amazon US/MX blocked by duplicate seller SKUs per ASIN — see `FINDINGS.md`.
+  TikTok and US 3PL still pending (separate blockers below).
+
+- [ ] **Resolve Amazon duplicate SKU logic**
+  See `FINDINGS.md` for details. Amazon returns multiple seller SKUs per ASIN with identical
+  quantities. Need Amazon team to confirm: track by ASIN or by seller SKU? What to do with
+  `-USA` suffix variants and `Stickered/Uncommingled.MSKU.*` entries (always 0 qty)?
+  Once decided, update `connectors/amazon.py` and re-run.
+
+- [ ] **Review extracted data and clean up database**
+  Shopify and ShipHero rows are in `inventory_snapshots`. Before adding SKU mappings,
+  review the data in Supabase table editor: check `external_sku` values look correct,
+  delete any test/junk rows, confirm row counts make sense.
 
 ## SKU mappings (needed for the dashboard to show data)
 
@@ -37,13 +45,11 @@ will be blank. For each source:
 
 ## Pending connectors
 
-- [ ] **TikTok US (FBT)**
-  The correct FBT inventory endpoint path is unknown — all candidates return
-  `403 "no schema found"` (empty app_id). FBT scope is authorized.
-  Next step: check the **API Explorer** in the TikTok Partner Portal
-  (partner.tiktokshop.com → your app) for the exact endpoint path, then
-  update `connectors/tiktok.py`. Also find the correct token refresh endpoint
-  (current `/api/token/refreshToken` returns 404).
+- [x] **TikTok US (FBT)**
+  Endpoint: `POST /fbt/202408/inventory/search` (version `202408`).
+  Returns one row per product per warehouse — connector aggregates across all warehouses.
+  13 products returned. Uses `goods.reference_code` (e.g. `SCL-0117`) as `external_sku`.
+  Note: token refresh endpoint still returns 404 — not a blocker while access token is valid.
 
 - [ ] **US 3PL**
   Provider not yet confirmed. Once identified, look up their REST API docs

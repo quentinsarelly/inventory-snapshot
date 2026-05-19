@@ -1,4 +1,4 @@
-psycopg2-binary==2.9.9
+supabase==2.30.0
 python-dotenv==1.0.1
 requests==2.32.3
 python-amazon-sp-api==2.1.8

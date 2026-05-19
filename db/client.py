@@ -1,12 +1,21 @@
 import os
-import psycopg2
-import psycopg2.extras
 from dotenv import load_dotenv
+from supabase import create_client, Client
 
 load_dotenv()
 
-def get_conn():
-    return psycopg2.connect(os.environ["DATABASE_URL"])
+_client: Client | None = None
+
+
+def get_client() -> Client:
+    global _client
+    if _client is None:
+        _client = create_client(
+            os.environ["SUPABASE_URL"],
+            os.environ["SUPABASE_SERVICE_KEY"],
+        )
+    return _client
+
 
 def upsert_snapshots(rows: list[dict]) -> int:
     """
@@ -18,48 +27,35 @@ def upsert_snapshots(rows: list[dict]) -> int:
     if not rows:
         return 0
 
-    sql = """
-        INSERT INTO inventory_snapshots
-            (snapshot_date, source, internal_sku, external_id, external_sku,
-             qty_on_hand, qty_reserved, qty_available, qty_inbound, raw_data)
-        VALUES (
-            %(snapshot_date)s, %(source)s, %(internal_sku)s, %(external_id)s,
-            %(external_sku)s, %(qty_on_hand)s, %(qty_reserved)s,
-            %(qty_available)s, %(qty_inbound)s, %(raw_data)s)
-        ON CONFLICT (snapshot_date, source, external_id)
-        DO UPDATE SET
-            external_sku   = EXCLUDED.external_sku,
-            internal_sku   = EXCLUDED.internal_sku,
-            qty_on_hand    = EXCLUDED.qty_on_hand,
-            qty_reserved   = EXCLUDED.qty_reserved,
-            qty_available  = EXCLUDED.qty_available,
-            qty_inbound    = EXCLUDED.qty_inbound,
-            raw_data       = EXCLUDED.raw_data,
-            fetched_at     = NOW()
-    """
+    # PostgREST expects date as ISO string
+    payload = [
+        {**r, "snapshot_date": str(r["snapshot_date"])}
+        for r in rows
+    ]
 
-    with get_conn() as conn:
-        with conn.cursor() as cur:
-            psycopg2.extras.execute_batch(cur, sql, rows)
-        conn.commit()
+    get_client().table("inventory_snapshots").upsert(
+        payload,
+        on_conflict="snapshot_date,source,external_id",
+    ).execute()
 
     return len(rows)
+
 
 def resolve_internal_skus(source: str, external_ids: list[str]) -> dict[str, str]:
     """Returns {external_id: internal_sku} for known mappings."""
     if not external_ids:
         return {}
-    with get_conn() as conn:
-        with conn.cursor() as cur:
-            cur.execute(
-                "SELECT external_id, internal_sku FROM sku_mappings "
-                "WHERE source = %s AND external_id = ANY(%s)",
-                (source, external_ids),
-            )
-            return {row[0]: row[1] for row in cur.fetchall()}
+
+    resp = (
+        get_client()
+        .table("sku_mappings")
+        .select("external_id,internal_sku")
+        .eq("source", source)
+        .in_("external_id", external_ids)
+        .execute()
+    )
+    return {row["external_id"]: row["internal_sku"] for row in resp.data}
+
 
 def refresh_unified_view():
-    with get_conn() as conn:
-        with conn.cursor() as cur:
-            cur.execute("REFRESH MATERIALIZED VIEW CONCURRENTLY inventory_unified")
-        conn.commit()
+    get_client().rpc("refresh_inventory_unified").execute()

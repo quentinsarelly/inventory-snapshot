@@ -1,8 +1,9 @@
 """
 TikTok Shop FBT (Fulfilled by TikTok) inventory connector.
 
-Fetches warehouse inventory from TikTok Shop Open Platform.
-Requires: TIKTOK_APP_KEY, TIKTOK_APP_SECRET, TIKTOK_ACCESS_TOKEN, TIKTOK_REFRESH_TOKEN
+Endpoints:
+  MCF status:       GET  /fbt/202601/merchants/mcf_status
+  Inventory search: POST /fbt/202408/inventory/search
 """
 import hashlib
 import hmac
@@ -24,30 +25,6 @@ BASE_URL = "https://open-api.tiktokglobalshop.com"
 _access_token: str = ""
 
 
-def _refresh_token() -> str:
-    """Exchange the refresh token for a new access token and update the module-level cache."""
-    global _access_token
-    app_key = os.environ["TIKTOK_APP_KEY"]
-    app_secret = os.environ["TIKTOK_APP_SECRET"]
-    refresh_token = os.environ["TIKTOK_REFRESH_TOKEN"]
-    resp = requests.get(
-        f"{BASE_URL}/api/token/refreshToken",
-        params={
-            "app_key": app_key,
-            "app_secret": app_secret,
-            "refresh_token": refresh_token,
-            "grant_type": "refresh_token",
-        },
-        timeout=30,
-    )
-    resp.raise_for_status()
-    data = resp.json()
-    if data.get("code") != 0:
-        raise RuntimeError(f"TikTok token refresh failed: {data.get('message')} (code {data.get('code')})")
-    _access_token = data["data"]["access_token"]
-    return _access_token
-
-
 def _get_token() -> str:
     global _access_token
     if not _access_token:
@@ -56,91 +33,130 @@ def _get_token() -> str:
 
 
 def _sign(app_secret: str, path: str, params: dict, body: str = "") -> str:
-    """HMAC-SHA256 signature — access_token is excluded from signing (sent in header instead)."""
+    """HMAC-SHA256 signature — access_token excluded from signing, sent in header."""
     exclude = {"sign", "access_token"}
     sorted_params = "".join(f"{k}{v}" for k, v in sorted(params.items()) if k not in exclude)
     to_sign = app_secret + path + sorted_params + body + app_secret
     return hmac.new(app_secret.encode(), to_sign.encode(), hashlib.sha256).hexdigest()
 
 
-def _get(path: str, extra_params: dict | None = None, _retried: bool = False) -> dict:
-    app_key = os.environ["TIKTOK_APP_KEY"]
-    app_secret = os.environ["TIKTOK_APP_SECRET"]
-    shop_id = os.environ.get("TIKTOK_SHOP_ID", "")
-    shop_cipher = os.environ.get("TIKTOK_SHOP_CYPHER", "")
-
-    params: dict = {
-        "app_key": app_key,
+def _base_params(version: str) -> dict:
+    return {
+        "app_key": os.environ["TIKTOK_APP_KEY"],
         "timestamp": str(int(time.time())),
-        "version": "202309",
-        **({"shop_id": shop_id} if shop_id else {}),
-        **({"shop_cipher": shop_cipher} if shop_cipher else {}),
-        **(extra_params or {}),
+        "version": version,
+        "shop_id": os.environ.get("TIKTOK_SHOP_ID", ""),
+        "shop_cipher": os.environ.get("TIKTOK_SHOP_CYPHER", ""),
     }
+
+
+def _get(path: str, version: str, extra_params: dict | None = None) -> dict:
+    app_secret = os.environ["TIKTOK_APP_SECRET"]
+    params = {**_base_params(version), **(extra_params or {})}
     params["sign"] = _sign(app_secret, path, params)
 
     resp = requests.get(
         BASE_URL + path,
         params=params,
-        headers={"Content-Type": "application/json", "x-tts-access-token": _get_token()},
+        headers={"x-tts-access-token": _get_token()},
         timeout=30,
     )
-
-    # On 401/403, try refreshing the token once
-    if resp.status_code in (401, 403) and not _retried:
-        _refresh_token()
-        return _get(path, extra_params, _retried=True)
-
     resp.raise_for_status()
     data = resp.json()
     if data.get("code") not in (0, None):
-        # TikTok uses code=4 for auth errors — retry with fresh token
-        if data.get("code") in (4, 40001, 40002) and not _retried:
-            _refresh_token()
-            return _get(path, extra_params, _retried=True)
-        raise RuntimeError(f"TikTok API error: {data.get('message')} (code {data.get('code')})")
+        raise RuntimeError(f"TikTok GET error on {path}: {data.get('message')} (code {data.get('code')})")
     return data.get("data", {})
 
+
+def _post(path: str, version: str, body: dict, extra_params: dict | None = None) -> dict:
+    app_secret = os.environ["TIKTOK_APP_SECRET"]
+    body_str = json.dumps(body, separators=(",", ":"))
+    params = {**_base_params(version), **(extra_params or {})}
+    params["sign"] = _sign(app_secret, path, params, body_str)
+
+    resp = requests.post(
+        BASE_URL + path,
+        params=params,
+        data=body_str,
+        headers={
+            "Content-Type": "application/json",
+            "x-tts-access-token": _get_token(),
+        },
+        timeout=30,
+    )
+    resp.raise_for_status()
+    data = resp.json()
+    if data.get("code") not in (0, None):
+        raise RuntimeError(f"TikTok POST error on {path}: {data.get('message')} (code {data.get('code')})")
+    return data.get("data", {})
+
+
+
 def run(snapshot_date: date) -> int:
-    all_items = []
-    page = 1
-    page_size = 100
+    # Fetch all pages and aggregate per-warehouse entries by goods.id
+    aggregated: dict[str, dict] = {}  # goods_id -> accumulated totals
+    page_token: str | None = None
 
     while True:
-        data = _get(
-            "/api/fulfillment/warehouse/inventory/list",
-            {"page_number": str(page), "page_size": str(page_size)},
-        )
-        items = data.get("inventory_list") or data.get("list", [])
-        all_items.extend(items)
+        extra: dict = {"page_size": 100}
+        if page_token:
+            extra["page_token"] = page_token
 
-        total = data.get("total", 0)
-        if len(all_items) >= total or not items:
+        data = _post("/fbt/202408/inventory/search", version="202408", body={}, extra_params=extra)
+        items = data.get("inventory", [])
+
+        for item in items:
+            goods = item.get("goods", {})
+            goods_id = str(goods.get("id", ""))
+            if not goods_id:
+                continue
+
+            oh = item.get("on_hand_detail", {})
+            available = int(oh.get("available_quantity", 0))
+            reserved  = int(oh.get("reserved_quantity", 0))
+            on_hand   = int(oh.get("total_quantity", 0))
+            inbound   = int(item.get("in_transit_quantity", 0))
+
+            if goods_id not in aggregated:
+                aggregated[goods_id] = {
+                    "goods_id":       goods_id,
+                    "reference_code": goods.get("reference_code", ""),
+                    "name":           goods.get("name", ""),
+                    "available":      0,
+                    "reserved":       0,
+                    "on_hand":        0,
+                    "inbound":        0,
+                    "raw_items":      [],
+                }
+            agg = aggregated[goods_id]
+            agg["available"] += available
+            agg["reserved"]  += reserved
+            agg["on_hand"]   += on_hand
+            agg["inbound"]   += inbound
+            agg["raw_items"].append(item)
+
+        page_token = data.get("next_page_token")
+        if not page_token or not items:
             break
-        page += 1
 
-    external_ids = [item.get("seller_sku", "") for item in all_items if item.get("seller_sku")]
-    sku_map = resolve_internal_skus(SOURCE, external_ids)
+    # Resolve SKUs using reference_code (matches internal SKU format e.g. SCL-0117)
+    ref_codes = [v["reference_code"] for v in aggregated.values() if v["reference_code"]]
+    sku_map = resolve_internal_skus(SOURCE, ref_codes)
 
     rows = []
-    for item in all_items:
-        seller_sku = item.get("seller_sku", "")
-        product_id = str(item.get("product_id", seller_sku))
-        available = item.get("available_quantity", 0) or 0
-        reserved = item.get("reserved_quantity", 0) or 0
-        on_hand = available + reserved
-
+    for agg in aggregated.values():
+        ref = agg["reference_code"]
         rows.append({
             "snapshot_date": snapshot_date,
-            "source": SOURCE,
-            "internal_sku": sku_map.get(seller_sku),
-            "external_id": product_id,
-            "external_sku": seller_sku,
-            "qty_on_hand": on_hand,
-            "qty_reserved": reserved,
-            "qty_available": available,
-            "qty_inbound": None,
-            "raw_data": json.dumps(item),
+            "source":        SOURCE,
+            "internal_sku":  sku_map.get(ref),
+            "external_id":   agg["goods_id"],
+            "external_sku":  ref,
+            "qty_on_hand":   agg["on_hand"],
+            "qty_reserved":  agg["reserved"],
+            "qty_available": agg["available"],
+            "qty_inbound":   agg["inbound"],
+            "raw_data":      json.dumps(agg["raw_items"]),
         })
 
     return upsert_snapshots(rows)
