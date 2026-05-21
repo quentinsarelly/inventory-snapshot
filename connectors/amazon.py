@@ -59,6 +59,39 @@ def run(snapshot_date: date, marketplace: str = "us") -> int:
         if not next_token:
             break
 
+    # Deduplicate: one row per ASIN. Multiple seller SKUs share identical inventory counts.
+    # US: prefer the SKU ending with "-USA".
+    # MX: prefer the clean base SKU (no -USA suffix, no spaces, no auto-generated strings).
+    def _is_canonical_mx(sku: str) -> bool:
+        s = sku.upper()
+        if s.endswith("-USA") or "-USA-" in s:
+            return False
+        if sku.startswith("Stickered.") or sku.startswith("Uncommingled."):
+            return False
+        if " " in sku:
+            return False
+        if not (s.startswith("SAR-") or s.startswith("SCL-")):
+            return False
+        return True
+
+    by_asin: dict[str, dict] = {}
+    for item in all_items:
+        asin = item["asin"]
+        sku = item.get("sellerSku", "")
+        if asin not in by_asin:
+            by_asin[asin] = item
+        else:
+            current_sku = by_asin[asin].get("sellerSku", "")
+            if marketplace == "us":
+                if sku.upper().endswith("-USA"):
+                    by_asin[asin] = item
+            else:
+                curr_ok = _is_canonical_mx(current_sku)
+                new_ok = _is_canonical_mx(sku)
+                if new_ok and (not curr_ok or sku < current_sku):
+                    by_asin[asin] = item
+    all_items = list(by_asin.values())
+
     external_ids = [item["asin"] for item in all_items]
     sku_map = resolve_internal_skus(source, external_ids)
 
