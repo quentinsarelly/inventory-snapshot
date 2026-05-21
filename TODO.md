@@ -12,16 +12,15 @@
   Amazon US/MX blocked by duplicate seller SKUs per ASIN — see `FINDINGS.md`.
   TikTok and US 3PL still pending (separate blockers below).
 
-- [ ] **Resolve Amazon duplicate SKU logic**
-  See `FINDINGS.md` for details. Amazon returns multiple seller SKUs per ASIN with identical
-  quantities. Need Amazon team to confirm: track by ASIN or by seller SKU? What to do with
-  `-USA` suffix variants and `Stickered/Uncommingled.MSKU.*` entries (always 0 qty)?
-  Once decided, update `connectors/amazon.py` and re-run.
+- [x] **Resolve Amazon duplicate SKU logic**
+  US: keep the SKU ending with `-USA`. MX: keep the clean base SKU (no `-USA`, no spaces,
+  no auto-generated or `Stickered/Uncommingled.MSKU.*` strings; alphabetically first among
+  valid candidates). All 6 connectors now write successfully — 183 shopify_us, 961 shopify_mx,
+  113 amazon_us, 113 amazon_mx, 13 tiktok_us, 682 mx_3pl.
 
 - [ ] **Review extracted data and clean up database**
-  Shopify and ShipHero rows are in `inventory_snapshots`. Before adding SKU mappings,
-  review the data in Supabase table editor: check `external_sku` values look correct,
-  delete any test/junk rows, confirm row counts make sense.
+  All sources are now in `inventory_snapshots`. Review in Supabase table editor:
+  check `external_sku` values look correct, delete any junk rows, confirm counts make sense.
 
 ## SKU mappings (needed for the dashboard to show data)
 
