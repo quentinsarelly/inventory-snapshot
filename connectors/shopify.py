@@ -1,7 +1,8 @@
 """
 Shopify inventory connector — supports US and MX stores.
 
-Fetches available inventory aggregated across all locations for every variant SKU.
+Fetches available inventory for active (non-archived) products only.
+Archived products with remaining stock are reported separately for logistics review.
 Requires: SHOPIFY_CLIENT_ID, SHOPIFY_CLIENT_SECRET,
           SHOPIFY_US_SHOP_DOMAIN, SHOPIFY_MX_SHOP_DOMAIN in environment.
 """
@@ -55,10 +56,17 @@ def _next_page_url(link_header: str) -> str | None:
     return None
 
 
-def _fetch_item_to_sku(session: requests.Session, base_url: str) -> dict[str, str]:
-    mapping: dict[str, str] = {}
+def _fetch_products(session: requests.Session, base_url: str) -> tuple[dict[str, str], dict[str, str]]:
+    """
+    Returns (active, archived) where each is {inventory_item_id: sku}.
+    active:   status != 'archived' — included in daily snapshot.
+    archived: status == 'archived' — excluded from snapshot; reported if stock > 0.
+    """
+    active: dict[str, str] = {}
+    archived: dict[str, str] = {}
+
     url = f"{base_url}/products.json"
-    params: dict = {"limit": 250, "fields": "variants"}
+    params: dict = {"limit": 250, "fields": "status,variants"}
     while url:
         resp = session.get(url, params=params, timeout=30)
         if resp.status_code == 429:
@@ -66,22 +74,23 @@ def _fetch_item_to_sku(session: requests.Session, base_url: str) -> dict[str, st
             continue
         resp.raise_for_status()
         for product in resp.json().get("products", []):
+            is_archived = product.get("status") == "archived"
             for variant in product.get("variants", []):
                 iid = str(variant["inventory_item_id"])
-                mapping[iid] = variant.get("sku") or str(variant["id"])
+                sku = variant.get("sku") or str(variant["id"])
+                if is_archived:
+                    archived[iid] = sku
+                else:
+                    active[iid] = sku
         url = _next_page_url(resp.headers.get("Link", ""))
         params = {}
-    return mapping
+    return active, archived
 
 
 def _fetch_inventory_levels(
     session: requests.Session, base_url: str, item_ids: list[str]
 ) -> dict[str, int]:
-    """Returns {inventory_item_id: total_available} summed across all locations.
-
-    Filters by inventory_item_ids in batches of 250 — the only reliable approach
-    since /inventory_levels.json returns 422 without a required filter param.
-    """
+    """Returns {inventory_item_id: total_available} summed across all locations."""
     totals: dict[str, int] = {}
     for i in range(0, len(item_ids), 250):
         batch = ",".join(item_ids[i : i + 250])
@@ -110,15 +119,32 @@ def run(snapshot_date: date, store: str = "us") -> int:
     session = _session(token)
     base_url = f"https://{shop_domain}.myshopify.com/admin/api/{API_VERSION}"
 
-    item_to_sku = _fetch_item_to_sku(session, base_url)
-    level_totals = _fetch_inventory_levels(session, base_url, list(item_to_sku.keys()))
+    active, archived = _fetch_products(session, base_url)
 
-    external_ids = list(item_to_sku.values())
+    # Fetch inventory for all products (active + archived) in one pass
+    all_ids = list(set(active) | set(archived))
+    level_totals = _fetch_inventory_levels(session, base_url, all_ids)
+
+    # Report archived products that still have stock — for logistics review
+    archived_with_stock = [
+        (archived[iid], level_totals[iid])
+        for iid in archived
+        if level_totals.get(iid, 0) > 0
+    ]
+    if archived_with_stock:
+        print(f"  [LOGISTICS] {source}: {len(archived_with_stock)} archived products with stock remaining:")
+        for sku, qty in sorted(archived_with_stock, key=lambda x: -x[1]):
+            print(f"    {sku:<30} qty={qty}")
+
+    # Only snapshot active products
+    external_ids = list(active.values())
     sku_map = resolve_internal_skus(source, external_ids)
 
     rows = []
     for iid, qty in level_totals.items():
-        external_sku = item_to_sku.get(iid, iid)
+        if iid not in active:
+            continue
+        external_sku = active[iid]
         rows.append({
             "snapshot_date": snapshot_date,
             "source": source,
