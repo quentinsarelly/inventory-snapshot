@@ -144,22 +144,26 @@ def run(snapshot_date: date, store: str = "us") -> int:
     external_ids = list(active.values())
     sku_map = resolve_internal_skus(source, external_ids)
 
-    rows = []
+    # Aggregate by SKU (multiple variants can share the same SKU)
+    by_sku: dict[str, dict] = {}
     for iid, qty in level_totals.items():
         if iid not in active:
             continue
         external_sku = active[iid]
-        rows.append({
-            "snapshot_date": snapshot_date,
-            "source": source,
-            "internal_sku": sku_map.get(external_sku),
-            "external_id": external_sku,
-            "external_sku": external_sku,
-            "qty_on_hand": qty,
-            "qty_reserved": None,
-            "qty_available": qty,
-            "qty_inbound": None,
-            "raw_data": json.dumps({"inventory_item_id": iid, "available": qty}),
-        })
+        if external_sku not in by_sku:
+            by_sku[external_sku] = {
+                "snapshot_date": snapshot_date,
+                "source": source,
+                "internal_sku": sku_map.get(external_sku),
+                "external_id": external_sku,
+                "external_sku": external_sku,
+                "qty_on_hand": 0,
+                "qty_reserved": None,
+                "qty_available": 0,
+                "qty_inbound": None,
+                "raw_data": None,
+            }
+        by_sku[external_sku]["qty_on_hand"] = (by_sku[external_sku]["qty_on_hand"] or 0) + qty
+        by_sku[external_sku]["qty_available"] = (by_sku[external_sku]["qty_available"] or 0) + qty
 
-    return upsert_snapshots(rows)
+    return upsert_snapshots(list(by_sku.values()))
