@@ -153,7 +153,7 @@ def run(snapshot_date: date, store: str = "us") -> int:
             "snapshot_date": snapshot_date,
             "source": source,
             "internal_sku": sku_map.get(external_sku),
-            "external_id": iid,
+            "external_id": external_sku,
             "external_sku": external_sku,
             "qty_on_hand": qty,
             "qty_reserved": None,
