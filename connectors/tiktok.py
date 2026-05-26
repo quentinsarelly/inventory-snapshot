@@ -145,7 +145,7 @@ def run(snapshot_date: date) -> int:
             if goods_id not in aggregated:
                 aggregated[goods_id] = {
                     "goods_id":       goods_id,
-                    "reference_code": goods.get("reference_code", ""),
+                    "reference_code": goods.get("reference_code", "").upper(),
                     "name":           goods.get("name", ""),
                     "available":      0,
                     "reserved":       0,
