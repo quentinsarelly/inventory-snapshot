@@ -23,12 +23,16 @@ CLIENT_ID = os.getenv("SHOPIFY_CLIENT_ID")
 CLIENT_SECRET = os.getenv("SHOPIFY_CLIENT_SECRET")
 
 STORE_CONFIG = {
-    "us": {"domain_env": "SHOPIFY_US_SHOP_DOMAIN", "source": "shopify_us"},
-    "mx": {"domain_env": "SHOPIFY_MX_SHOP_DOMAIN", "source": "shopify_mx"},
+    "us": {"domain_env": "SHOPIFY_US_SHOP_DOMAIN", "token_env": "SHOPIFY_US_ACCESS_TOKEN", "source": "shopify_us"},
+    "mx": {"domain_env": "SHOPIFY_MX_SHOP_DOMAIN", "token_env": "SHOPIFY_MX_ACCESS_TOKEN", "source": "shopify_mx"},
 }
 
 
-def _get_token(shop_domain: str) -> str:
+def _get_token(shop_domain: str, token_env: str) -> str:
+    # Use pre-fetched token if available (required for CI where client_credentials is blocked).
+    # client_credentials tokens don't expire, so this is safe to store as a secret.
+    if token := os.getenv(token_env):
+        return token
     resp = requests.post(
         f"https://{shop_domain}.myshopify.com/admin/oauth/access_token",
         data={
@@ -115,7 +119,7 @@ def run(snapshot_date: date, store: str = "us") -> int:
     shop_domain = os.environ[cfg["domain_env"]]
     source = cfg["source"]
 
-    token = _get_token(shop_domain)
+    token = _get_token(shop_domain, cfg["token_env"])
     session = _session(token)
     base_url = f"https://{shop_domain}.myshopify.com/admin/api/{API_VERSION}"
 
