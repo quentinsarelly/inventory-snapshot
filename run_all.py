@@ -6,7 +6,8 @@ Usage:
     python run_all.py --dry-run  # fetch only, print quality report, no writes
 """
 import sys
-from datetime import date
+from datetime import datetime
+from zoneinfo import ZoneInfo
 
 from connectors import shopify, amazon, tiktok, us_3pl, mx_3pl
 from db.client import refresh_unified_view
@@ -41,7 +42,7 @@ def _quality_report(name: str, rows: list[dict]) -> None:
 
 def main():
     dry_run = "--dry-run" in sys.argv
-    snapshot_date = date.today()
+    snapshot_date = datetime.now(ZoneInfo("America/Mexico_City")).date()
     errors = []
 
     if dry_run:

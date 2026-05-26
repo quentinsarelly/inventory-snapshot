@@ -45,16 +45,41 @@ def load_available_dates() -> list[str]:
 
 @st.cache_data(ttl=300)
 def load_inventory(snapshot_date: str) -> pd.DataFrame:
+    # Query raw snapshots and pivot in Python — avoids dependency on the
+    # materialized view being refreshed and always reflects the latest run.
     resp = (
         get_client()
-        .table("inventory_unified")
-        .select("internal_sku,display_name,category,shopify_us,shopify_mx,amazon_us,amazon_mx,tiktok_us,us_3pl,mx_3pl,total_available")
+        .table("inventory_snapshots")
+        .select("internal_sku,source,qty_available")
         .eq("snapshot_date", snapshot_date)
-        .order("total_available", desc=True)
-        .limit(1000)
+        .not_.is_("internal_sku", "null")
+        .limit(5000)
         .execute()
     )
-    return pd.DataFrame(resp.data) if resp.data else pd.DataFrame()
+    if not resp.data:
+        return pd.DataFrame()
+
+    df = pd.DataFrame(resp.data)
+    pivot = (
+        df.pivot_table(index="internal_sku", columns="source", values="qty_available", aggfunc="sum", fill_value=0)
+        .reset_index()
+    )
+    for src in SOURCES:
+        if src not in pivot.columns:
+            pivot[src] = 0
+    pivot["total_available"] = pivot[SOURCES].sum(axis=1)
+
+    skus = pivot["internal_sku"].tolist()
+    master = (
+        get_client()
+        .table("sku_master")
+        .select("internal_sku,display_name,category")
+        .in_("internal_sku", skus)
+        .execute()
+    )
+    master_df = pd.DataFrame(master.data) if master.data else pd.DataFrame(columns=["internal_sku", "display_name", "category"])
+
+    return pivot.merge(master_df, on="internal_sku", how="left").sort_values("total_available", ascending=False)
 
 
 # ── Sidebar ───────────────────────────────────────────────────────────────────
