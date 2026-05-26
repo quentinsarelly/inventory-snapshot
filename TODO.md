@@ -64,6 +64,25 @@
   All secrets added. Shopify uses pre-fetched tokens (client_credentials blocked in CI).
   See README for full secrets reference and maintenance notes.
 
-- [ ] **Deploy dashboard**
-  Go to share.streamlit.io → connect the GitHub repo → set entry point to
-  `dashboard/app.py` → add `DATABASE_URL` as a secret in Streamlit Cloud.
+- [x] **Deploy dashboard**
+  Deployed on Streamlit Cloud at `dashboard/app.py`. Supabase credentials
+  added as secrets. Fixed pandas wheel issue by adding `dashboard/requirements.txt`
+  with lean dependencies (no python-amazon-sp-api).
+
+- [x] **Fix Shopify and TikTok invisible in dashboard**
+  Both connectors were storing a numeric platform ID as `external_id` in
+  `inventory_snapshots`, but `sku_mappings` uses the SKU string (e.g. SAR-1036,
+  SCL-0117). The view join on `external_id` never matched. Fixed both connectors
+  to use the SKU string as `external_id`. Stale rows with numeric IDs remain in
+  the DB but are harmless (ignored by the view).
+
+## Database cleanup (once data is confirmed clean)
+
+- [ ] **Delete stale snapshot rows and reset to clean baseline**
+  Once a few daily runs have confirmed all sources look correct, run:
+  ```sql
+  DELETE FROM inventory_snapshots WHERE snapshot_date < 'YYYY-MM-DD';
+  REFRESH MATERIALIZED VIEW inventory_unified;
+  ```
+  This removes old rows written with the wrong external_id (numeric Shopify
+  inventory_item_id and TikTok goods_id) and any other junk from early dev runs.
