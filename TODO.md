@@ -47,7 +47,8 @@
   Endpoint: `POST /fbt/202408/inventory/search` (version `202408`).
   Returns one row per product per warehouse — connector aggregates across all warehouses.
   13 products returned. Uses `goods.reference_code` (e.g. `SCL-0117`) as `external_sku`.
-  Note: token refresh endpoint still returns 404 — not a blocker while access token is valid.
+  Token auto-refreshed on each run via `auth.tiktok-shops.com/api/v2/token/refresh`.
+  TIKTOK_REFRESH_TOKEN expires ~30 days — see README for renewal steps.
 
 - [ ] **US 3PL**
   Provider not yet confirmed. Once identified, look up their REST API docs
@@ -59,9 +60,9 @@
   Create a remote repo and push. The GitHub Actions workflow
   (`.github/workflows/daily_snapshot.yml`) runs automatically on push.
 
-- [ ] **Add secrets to GitHub**
-  In the repo: Settings → Secrets → Actions. Add every key from `.env`
-  as a repository secret so the daily cron can authenticate.
+- [x] **Add secrets to GitHub**
+  All secrets added. Shopify uses pre-fetched tokens (client_credentials blocked in CI).
+  See README for full secrets reference and maintenance notes.
 
 - [ ] **Deploy dashboard**
   Go to share.streamlit.io → connect the GitHub repo → set entry point to
