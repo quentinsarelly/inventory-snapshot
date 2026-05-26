@@ -24,6 +24,29 @@ BASE_URL = "https://open-api.tiktokglobalshop.com"
 
 _access_token: str = ""
 
+AUTH_URL = "https://auth.tiktok-shops.com"
+
+
+def _refresh_token() -> str:
+    """Fetch a fresh access token using the refresh token. Called once per run."""
+    global _access_token
+    resp = requests.get(
+        f"{AUTH_URL}/api/v2/token/refresh",
+        params={
+            "app_key":      os.environ["TIKTOK_APP_KEY"],
+            "app_secret":   os.environ["TIKTOK_APP_SECRET"],
+            "refresh_token": os.environ["TIKTOK_REFRESH_TOKEN"],
+            "grant_type":   "refresh_token",
+        },
+        timeout=30,
+    )
+    resp.raise_for_status()
+    data = resp.json()
+    if data.get("code") != 0:
+        raise RuntimeError(f"TikTok token refresh failed: {data.get('message')} (code {data.get('code')})")
+    _access_token = data["data"]["access_token"]
+    return _access_token
+
 
 def _get_token() -> str:
     global _access_token
@@ -93,6 +116,8 @@ def _post(path: str, version: str, body: dict, extra_params: dict | None = None)
 
 
 def run(snapshot_date: date) -> int:
+    _refresh_token()  # always get a fresh token at the start of each run
+
     # Fetch all pages and aggregate per-warehouse entries by goods.id
     aggregated: dict[str, dict] = {}  # goods_id -> accumulated totals
     page_token: str | None = None
