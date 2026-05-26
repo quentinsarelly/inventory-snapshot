@@ -175,7 +175,7 @@ def run(snapshot_date: date) -> int:
             "snapshot_date": snapshot_date,
             "source":        SOURCE,
             "internal_sku":  sku_map.get(ref),
-            "external_id":   agg["goods_id"],
+            "external_id":   ref,
             "external_sku":  ref,
             "qty_on_hand":   agg["on_hand"],
             "qty_reserved":  agg["reserved"],
