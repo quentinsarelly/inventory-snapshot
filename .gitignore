@@ -3,3 +3,4 @@ __pycache__/
 *.pyc
 *.pyo
 .python-version
+sku_matching_review.csv

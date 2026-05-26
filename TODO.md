@@ -24,23 +24,22 @@
 
 ## SKU mappings (needed for the dashboard to show data)
 
-The `sku_mappings` table is empty — until it's populated, all rows in
-`inventory_snapshots` will have `internal_sku = NULL` and the unified view
-will be blank. For each source:
+- [x] **350 mappings inserted across all sources**
+  Shopify US (38), Shopify MX (65), Amazon US (57), Amazon MX (56),
+  TikTok US (7), ShipHero/mx_3pl (117). Dashboard now shows 360 products.
+  See `sku_matching_review.csv` for the full review.
 
-- [ ] **Shopify US + MX** — after the live write, query `inventory_snapshots`
-  for `source IN ('shopify_us', 'shopify_mx')` and match `external_sku`
-  values to your `sku_master` internal SKUs. Many will match directly
-  (same SKU code). Insert into `sku_mappings`.
+- [x] **Archived Shopify products filtered out**
+  Only active products written to snapshots. 6 archived MX products with
+  remaining stock flagged as [LOGISTICS] warning on each run.
 
-- [ ] **Amazon US** — query snapshots for `source = 'amazon_us'`, match
-  `external_id` (ASIN) and `external_sku` (seller SKU) to internal SKUs.
+- [ ] **Complete remaining unmatched SKUs**
+  ~100 unmatched per source remain (new products not yet in sku_master,
+  non-product ShipHero SKUs like INS-*, COL-*, WHS-*). Add new products
+  to sku_master as they are catalogued, then re-run matching script.
 
-- [ ] **Amazon MX** — same as above for `source = 'amazon_mx'`.
-  Also verify the MX refresh token works (currently using the same token as US).
-
-- [ ] **ShipHero (MX 3PL)** — query snapshots for `source = 'mx_3pl'`,
-  match `external_sku` to internal SKUs. ShipHero uses its own SKU codes.
+- [ ] **Fill display_name/category for SCL-0108, SCL-0111, SCL-0114**
+  Added to sku_master as placeholders — details to be filled in Supabase.
 
 ## Pending connectors
 
@@ -56,7 +55,7 @@ will be blank. For each source:
 
 ## Automation (after live writes are confirmed working)
 
-- [ ] **Push to GitHub**
+- [x] **Push to GitHub**
   Create a remote repo and push. The GitHub Actions workflow
   (`.github/workflows/daily_snapshot.yml`) runs automatically on push.
 
