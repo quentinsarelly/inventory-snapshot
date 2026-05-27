@@ -88,6 +88,8 @@ def load_inventory(snapshot_date: str) -> pd.DataFrame:
             inbound[col] = 0
 
     pivot = avail.merge(inbound, on="internal_sku", how="left").fillna(0)
+    int_cols = SOURCES + [f"inbound_{s}" for s in INBOUND_SOURCES] + ["total_available"]
+    pivot[int_cols] = pivot[int_cols].astype(int)
 
     skus = pivot["internal_sku"].tolist()
     master = (
