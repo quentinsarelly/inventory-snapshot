@@ -14,13 +14,23 @@ from datetime import date
 import requests
 from dotenv import load_dotenv
 
-from db.client import resolve_internal_skus, upsert_snapshots
+from db.client import resolve_internal_skus, upsert_snapshots, upsert_location_snapshots
 
 load_dotenv()
 
 API_VERSION = os.getenv("SHOPIFY_API_VERSION", "2026-01")
 CLIENT_ID = os.getenv("SHOPIFY_CLIENT_ID")
 CLIENT_SECRET = os.getenv("SHOPIFY_CLIENT_SECRET")
+
+# Shopify MX retail locations — stores + Julius warehouse
+RETAIL_LOCATIONS = {
+    87343071476: "Andares",
+    90311393524: "Monterrey",
+    85657452788: "Mérida",
+    87941251316: "Perisur",
+    90665287924: "Queretaro",
+    90259423476: "Julius",
+}
 
 STORE_CONFIG = {
     "us": {"domain_env": "SHOPIFY_US_SHOP_DOMAIN", "token_env": "SHOPIFY_US_ACCESS_TOKEN", "source": "shopify_us"},
@@ -114,6 +124,32 @@ def _fetch_inventory_levels(
     return totals
 
 
+def _fetch_retail_levels(
+    session: requests.Session, base_url: str, item_ids: list[str]
+) -> dict[tuple[int, str], int]:
+    """Returns {(location_id, inventory_item_id): qty} for retail locations only."""
+    location_ids_str = ",".join(str(lid) for lid in RETAIL_LOCATIONS)
+    result: dict[tuple[int, str], int] = {}
+    for i in range(0, len(item_ids), 250):
+        batch = ",".join(item_ids[i : i + 250])
+        url: str | None = f"{base_url}/inventory_levels.json"
+        params: dict = {"limit": 250, "inventory_item_ids": batch, "location_ids": location_ids_str}
+        while url:
+            resp = session.get(url, params=params, timeout=30)
+            if resp.status_code == 429:
+                time.sleep(int(resp.headers.get("Retry-After", 2)))
+                continue
+            resp.raise_for_status()
+            for level in resp.json().get("inventory_levels", []):
+                loc_id = int(level["location_id"])
+                if loc_id in RETAIL_LOCATIONS:
+                    key = (loc_id, str(level["inventory_item_id"]))
+                    result[key] = result.get(key, 0) + (level.get("available") or 0)
+            url = _next_page_url(resp.headers.get("Link", ""))
+            params = {}
+    return result
+
+
 def run(snapshot_date: date, store: str = "us") -> int:
     cfg = STORE_CONFIG[store]
     shop_domain = os.environ[cfg["domain_env"]]
@@ -166,4 +202,30 @@ def run(snapshot_date: date, store: str = "us") -> int:
         by_sku[external_sku]["qty_on_hand"] = (by_sku[external_sku]["qty_on_hand"] or 0) + qty
         by_sku[external_sku]["qty_available"] = (by_sku[external_sku]["qty_available"] or 0) + qty
 
-    return upsert_snapshots(list(by_sku.values()))
+    upsert_snapshots(list(by_sku.values()))
+
+    # For MX: also capture per-location breakdown for retail stores + Julius
+    if store == "mx":
+        retail_levels = _fetch_retail_levels(session, base_url, list(active.keys()))
+        # Aggregate by (location_id, external_sku) in case multiple variants share a SKU
+        by_loc_sku: dict[tuple[int, str], int] = {}
+        for (loc_id, iid), qty in retail_levels.items():
+            if iid not in active:
+                continue
+            key = (loc_id, active[iid])
+            by_loc_sku[key] = by_loc_sku.get(key, 0) + qty
+
+        location_rows = [
+            {
+                "snapshot_date": snapshot_date,
+                "location_id":   loc_id,
+                "location_name": RETAIL_LOCATIONS[loc_id],
+                "internal_sku":  sku_map.get(ext_sku),
+                "external_sku":  ext_sku,
+                "qty_available": qty,
+            }
+            for (loc_id, ext_sku), qty in by_loc_sku.items()
+        ]
+        upsert_location_snapshots(location_rows)
+
+    return len(by_sku)

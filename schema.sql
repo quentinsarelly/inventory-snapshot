@@ -55,3 +55,16 @@ JOIN sku_master sk   ON sk.internal_sku = m.internal_sku
 GROUP BY s.snapshot_date, m.internal_sku, sk.display_name, sk.category;
 
 CREATE UNIQUE INDEX ON inventory_unified (snapshot_date, internal_sku);
+
+-- Per-location inventory for Shopify MX retail locations (stores + Julius)
+CREATE TABLE inventory_location_snapshots (
+    id            BIGSERIAL PRIMARY KEY,
+    snapshot_date DATE         NOT NULL,
+    location_id   BIGINT       NOT NULL,
+    location_name VARCHAR(100) NOT NULL,
+    internal_sku  VARCHAR(100) REFERENCES sku_master(internal_sku),
+    external_sku  VARCHAR(200) NOT NULL,
+    qty_available INTEGER      NOT NULL DEFAULT 0,
+    fetched_at    TIMESTAMPTZ  DEFAULT NOW(),
+    UNIQUE(snapshot_date, location_id, external_sku)
+);

@@ -82,6 +82,45 @@ def load_inventory(snapshot_date: str) -> pd.DataFrame:
     return pivot.merge(master_df, on="internal_sku", how="left").sort_values("total_available", ascending=False)
 
 
+RETAIL_LOCATIONS = ["Andares", "Monterrey", "Mérida", "Perisur", "Queretaro", "Julius"]
+
+
+@st.cache_data(ttl=300)
+def load_retail_inventory(snapshot_date: str) -> pd.DataFrame:
+    resp = (
+        get_client()
+        .table("inventory_location_snapshots")
+        .select("internal_sku,location_name,qty_available")
+        .eq("snapshot_date", snapshot_date)
+        .not_.is_("internal_sku", "null")
+        .limit(5000)
+        .execute()
+    )
+    if not resp.data:
+        return pd.DataFrame()
+
+    df = pd.DataFrame(resp.data)
+    pivot = (
+        df.pivot_table(index="internal_sku", columns="location_name", values="qty_available", aggfunc="sum", fill_value=0)
+        .reset_index()
+    )
+    for loc in RETAIL_LOCATIONS:
+        if loc not in pivot.columns:
+            pivot[loc] = 0
+    pivot["Total Retail"] = pivot[RETAIL_LOCATIONS].sum(axis=1)
+
+    skus = pivot["internal_sku"].tolist()
+    master = (
+        get_client()
+        .table("sku_master")
+        .select("internal_sku,display_name,category")
+        .in_("internal_sku", skus)
+        .execute()
+    )
+    master_df = pd.DataFrame(master.data) if master.data else pd.DataFrame(columns=["internal_sku", "display_name", "category"])
+    return pivot.merge(master_df, on="internal_sku", how="left").sort_values("Total Retail", ascending=False)
+
+
 # ── Sidebar ───────────────────────────────────────────────────────────────────
 st.sidebar.title("Filters")
 available_dates = load_available_dates()
@@ -135,3 +174,24 @@ st.dataframe(
 st.subheader("Available units by SKU (top 30)")
 chart_df = df.head(30).set_index("display_name")[SOURCES].rename(columns=SOURCE_LABELS)
 st.bar_chart(chart_df, height=400)
+
+st.divider()
+
+# ── Retail location breakdown ──────────────────────────────────────────────────
+st.subheader("Retail inventory by location (Shopify MX stores + Julius)")
+
+df_retail = load_retail_inventory(selected_date)
+
+if df_retail.empty:
+    st.info("No retail location data for this date. Run the connector to populate.")
+else:
+    if selected_category != "All":
+        df_retail = df_retail[df_retail["category"] == selected_category]
+
+    retail_col_rename = {"internal_sku": "SKU", "display_name": "Name", "category": "Category"}
+    display_cols = ["internal_sku", "display_name", "category"] + RETAIL_LOCATIONS + ["Total Retail"]
+    st.dataframe(
+        df_retail[display_cols].rename(columns=retail_col_rename),
+        use_container_width=True,
+        height=500,
+    )

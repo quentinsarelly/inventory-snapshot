@@ -57,5 +57,16 @@ def resolve_internal_skus(source: str, external_ids: list[str]) -> dict[str, str
     return {row["external_id"]: row["internal_sku"] for row in resp.data}
 
 
+def upsert_location_snapshots(rows: list[dict]) -> int:
+    """Insert or update inventory_location_snapshots rows (retail store breakdown)."""
+    if not rows:
+        return 0
+    payload = [{**r, "snapshot_date": str(r["snapshot_date"])} for r in rows]
+    get_client().table("inventory_location_snapshots").upsert(
+        payload, on_conflict="snapshot_date,location_id,external_sku"
+    ).execute()
+    return len(rows)
+
+
 def refresh_unified_view():
     get_client().rpc("refresh_inventory_unified").execute()
