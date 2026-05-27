@@ -22,6 +22,13 @@ SOURCE_LABELS = {
     "mx_3pl":     "MX 3PL (ShipHero)",
 }
 
+INBOUND_SOURCES = ["amazon_us", "amazon_mx", "tiktok_us"]
+INBOUND_LABELS  = {
+    "amazon_us":  "Amazon US (Inbound)",
+    "amazon_mx":  "Amazon MX (Inbound)",
+    "tiktok_us":  "TikTok US (Inbound)",
+}
+
 
 @st.cache_resource
 def get_client() -> Client:
@@ -45,12 +52,10 @@ def load_available_dates() -> list[str]:
 
 @st.cache_data(ttl=300)
 def load_inventory(snapshot_date: str) -> pd.DataFrame:
-    # Query raw snapshots and pivot in Python — avoids dependency on the
-    # materialized view being refreshed and always reflects the latest run.
     resp = (
         get_client()
         .table("inventory_snapshots")
-        .select("internal_sku,source,qty_available")
+        .select("internal_sku,source,qty_available,qty_inbound")
         .eq("snapshot_date", snapshot_date)
         .not_.is_("internal_sku", "null")
         .limit(5000)
@@ -60,14 +65,29 @@ def load_inventory(snapshot_date: str) -> pd.DataFrame:
         return pd.DataFrame()
 
     df = pd.DataFrame(resp.data)
-    pivot = (
+
+    avail = (
         df.pivot_table(index="internal_sku", columns="source", values="qty_available", aggfunc="sum", fill_value=0)
         .reset_index()
     )
     for src in SOURCES:
-        if src not in pivot.columns:
-            pivot[src] = 0
-    pivot["total_available"] = pivot[SOURCES].sum(axis=1)
+        if src not in avail.columns:
+            avail[src] = 0
+    avail["total_available"] = avail[SOURCES].sum(axis=1)
+
+    # Inbound columns for Amazon and TikTok
+    inbound = (
+        df[df["source"].isin(INBOUND_SOURCES)]
+        .pivot_table(index="internal_sku", columns="source", values="qty_inbound", aggfunc="sum", fill_value=0)
+        .reset_index()
+    )
+    inbound.columns = ["internal_sku"] + [f"inbound_{c}" for c in inbound.columns if c != "internal_sku"]
+    for src in INBOUND_SOURCES:
+        col = f"inbound_{src}"
+        if col not in inbound.columns:
+            inbound[col] = 0
+
+    pivot = avail.merge(inbound, on="internal_sku", how="left").fillna(0)
 
     skus = pivot["internal_sku"].tolist()
     master = (
@@ -155,9 +175,19 @@ st.divider()
 
 # ── Table ─────────────────────────────────────────────────────────────────────
 col_rename = {s: SOURCE_LABELS[s] for s in SOURCES}
+col_rename.update({f"inbound_{s}": INBOUND_LABELS[s] for s in INBOUND_SOURCES})
 col_rename.update({"internal_sku": "SKU", "display_name": "Name",
                    "category": "Category", "total_available": "Total"})
-df_display = df.rename(columns=col_rename)
+
+# Column order: meta, then each source followed by its inbound column if applicable
+ordered_cols = ["internal_sku", "display_name", "category"]
+for src in SOURCES:
+    ordered_cols.append(src)
+    if src in INBOUND_SOURCES:
+        ordered_cols.append(f"inbound_{src}")
+ordered_cols.append("total_available")
+
+df_display = df[ordered_cols].rename(columns=col_rename)
 
 def highlight_low(row):
     color = "background-color: #fff3cd" if row["Total"] < reorder_threshold else ""
