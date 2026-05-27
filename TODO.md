@@ -86,3 +86,37 @@
   ```
   This removes old rows written with the wrong external_id (numeric Shopify
   inventory_item_id and TikTok goods_id) and any other junk from early dev runs.
+
+
+## Features
+
+- [x] **Retail location breakdown (Shopify MX stores + Julius)**
+  New `inventory_location_snapshots` table. Connector fetches per-location
+  inventory for 6 retail locations (Andares, Monterrey, Mérida, Perisur,
+  Queretaro, Julius). Dashboard shows a separate section with one column
+  per location. Run SQL in Supabase to create the table before next run.
+
+- [x] **Inbound quantities (Amazon + TikTok)**
+  Surfaces `qty_inbound` already captured by connectors. Added three columns
+  to the main table: Amazon US (Inbound), Amazon MX (Inbound), TikTok US (Inbound),
+  each placed next to their available column.
+
+- [x] **In-stock rate ratio**
+  Per-channel and overall rate (SKUs with ≥ 1 unit / catalog size).
+  Denominator = sku_mappings count per source. Displayed as a compact table
+  between source totals and the main SKU table.
+
+- [ ] **Channel catalog (Google Sheet)**
+  Goal: define which SKUs belong to each channel's catalog, to use as the
+  correct denominator for the in-stock rate (currently using sku_mappings count
+  which can be inflated by stale mappings).
+
+  **Decided approach:** Google Sheet (one row per SKU, one column per channel,
+  TRUE/FALSE) synced into Supabase by the daily run. Dashboard reads from Supabase.
+
+  **Need from team before building:**
+  - Confirm sharing approach: **API key + sheet shared as "anyone with link can view"**
+    (simpler, no service account) vs. service account JSON (more secure, sheet stays private)
+  - A Google Sheets API key — can reuse one from existing Google API projects if available
+  - Once the sheet is created and shared, provide the Sheet ID (from the URL:
+    `docs.google.com/spreadsheets/d/SHEET_ID/edit`)
