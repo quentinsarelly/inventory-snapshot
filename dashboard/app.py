@@ -143,6 +143,56 @@ def load_retail_inventory(snapshot_date: str) -> pd.DataFrame:
     return pivot.merge(master_df, on="internal_sku", how="left").sort_values("Total Retail", ascending=False)
 
 
+@st.cache_data(ttl=300)
+def load_instock_rates(snapshot_date: str) -> pd.DataFrame:
+    # Catalog size per source = number of mappings in sku_mappings
+    maps = get_client().table("sku_mappings").select("source,internal_sku").execute()
+    catalog: dict[str, set] = {}
+    for r in maps.data:
+        catalog.setdefault(r["source"], set()).add(r["internal_sku"])
+
+    # In-stock SKUs per source = distinct mapped internal_skus with qty_available > 0
+    snap = (
+        get_client()
+        .table("inventory_snapshots")
+        .select("source,internal_sku,qty_available")
+        .eq("snapshot_date", snapshot_date)
+        .not_.is_("internal_sku", "null")
+        .execute()
+    )
+    in_stock: dict[str, set] = {}
+    for r in snap.data:
+        if (r["qty_available"] or 0) > 0:
+            in_stock.setdefault(r["source"], set()).add(r["internal_sku"])
+
+    rows = []
+    all_catalog: set = set()
+    all_in_stock: set = set()
+    for src in SOURCES:
+        if src not in catalog:
+            continue
+        total = len(catalog[src])
+        n = len(in_stock.get(src, set()))
+        rows.append({
+            "Channel":  SOURCE_LABELS[src],
+            "In Stock": n,
+            "Catalog":  total,
+            "Rate":     f"{n / total:.0%}" if total else "—",
+        })
+        all_catalog |= catalog[src]
+        all_in_stock |= in_stock.get(src, set())
+
+    overall_total = len(all_catalog)
+    overall_n = len(all_in_stock)
+    rows.append({
+        "Channel":  "Overall",
+        "In Stock": overall_n,
+        "Catalog":  overall_total,
+        "Rate":     f"{overall_n / overall_total:.0%}" if overall_total else "—",
+    })
+    return pd.DataFrame(rows)
+
+
 # ── Sidebar ───────────────────────────────────────────────────────────────────
 st.sidebar.title("Filters")
 available_dates = load_available_dates()
@@ -172,6 +222,13 @@ cols = st.columns(len(SOURCES))
 for col, src in zip(cols, SOURCES):
     if src in df.columns:
         col.metric(SOURCE_LABELS[src], f"{int(df[src].sum()):,}")
+
+st.divider()
+
+# ── In-stock rate ─────────────────────────────────────────────────────────────
+st.subheader("In-stock rate (SKUs with ≥ 1 unit available)")
+rates_df = load_instock_rates(selected_date)
+st.dataframe(rates_df, use_container_width=False, hide_index=True)
 
 st.divider()
 
