@@ -50,32 +50,27 @@ The **refresh token itself** expires in ~30 days and must be renewed manually.
 
 ### Shopify — access tokens
 
-Shopify's `client_credentials` OAuth flow is blocked from GitHub Actions IPs.
-We use pre-fetched permanent tokens (`SHOPIFY_US_ACCESS_TOKEN`, `SHOPIFY_MX_ACCESS_TOKEN`)
-stored as GitHub secrets. These do **not expire**.
+We use permanent offline OAuth tokens (`shpat_...`) stored as GitHub secrets.
+These do **not expire** unless the app is uninstalled from the store.
+
+**Do not** use the `client_credentials` grant — it generates short-lived rotating
+tokens that break within 24 hours.
 
 **If Shopify tokens stop working** (e.g. after app reinstall):
-1. Run locally: `python scripts/refresh_shopify_tokens.py` (or fetch manually — see below)
-2. Update the two GitHub secrets with the new `shpat_...` values
 
-To fetch tokens manually:
+**One-time setup** (only needed if `http://localhost:3000/callback` is not yet in
+the app's allowed redirect URLs): Partner Dashboard → your app → App setup → URLs
+→ add `http://localhost:3000/callback` → Save.
+
 ```bash
 source /home/quent/sarelly-venv/bin/activate
-python -c "
-import os, requests
-from dotenv import load_dotenv
-load_dotenv()
-for env, label in [('SHOPIFY_US_SHOP_DOMAIN','US'), ('SHOPIFY_MX_SHOP_DOMAIN','MX')]:
-    domain = os.environ[env]
-    resp = requests.post(
-        f'https://{domain}.myshopify.com/admin/oauth/access_token',
-        data={'client_id': os.environ['SHOPIFY_CLIENT_ID'],
-              'client_secret': os.environ['SHOPIFY_CLIENT_SECRET'],
-              'grant_type': 'client_credentials'},
-    )
-    print(f'SHOPIFY_{label}_ACCESS_TOKEN={resp.json()[\"access_token\"]}')
-"
+python scripts/get_shopify_tokens.py us   # opens browser, approve on US store
+python scripts/get_shopify_tokens.py mx   # opens browser, approve on MX store
 ```
+
+Each command prints a `shpat_...` token. Update:
+1. `.env` — `SHOPIFY_US_ACCESS_TOKEN` / `SHOPIFY_MX_ACCESS_TOKEN`
+2. GitHub secrets — same names
 
 ---
 
