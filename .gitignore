@@ -3,4 +3,7 @@ __pycache__/
 *.pyc
 *.pyo
 .python-version
+
+# Exclude private information
 sku_matching_review.csv
+cleanup/
