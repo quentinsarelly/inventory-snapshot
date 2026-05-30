@@ -1,18 +1,24 @@
 """
-Amazon SP-API inventory connector (FBA).
+Amazon SP-API inventory connector (FBA) — Reports API.
 
-Fetches FBA inventory summaries for a given marketplace.
+Requests a GET_FBA_MYI_UNSUPPRESSED_INVENTORY_DATA bulk report instead of
+paginating getInventorySummaries, avoiding per-call daily quota exhaustion
+on large catalogs (the original cause of QuotaExceeded errors on amazon_mx).
+
 Requires: AMAZON_LWA_APP_ID, AMAZON_LWA_CLIENT_SECRET,
           AMAZON_REFRESH_TOKEN_US / _MX,
           AMAZON_AWS_ACCESS_KEY, AMAZON_AWS_SECRET_KEY, AMAZON_ROLE_ARN
 """
+import csv
+import io
 import json
 import os
+import time
 from datetime import date
 
 from dotenv import load_dotenv
-from sp_api.api import Inventories
-from sp_api.base import Marketplaces, SellingApiException as SellerApiException
+from sp_api.api import Reports
+from sp_api.base import Marketplaces, SellingApiException
 
 from db.client import resolve_internal_skus, upsert_snapshots
 
@@ -23,103 +29,123 @@ MARKETPLACE_MAP = {
     "mx": (Marketplaces.MX, "AMAZON_REFRESH_TOKEN_MX", "amazon_mx"),
 }
 
+REPORT_TYPE    = "GET_FBA_MYI_UNSUPPRESSED_INVENTORY_DATA"
+INITIAL_WAIT   = 60   # seconds before first status check
+POLL_INTERVAL  = 30   # seconds between subsequent checks
+POLL_TIMEOUT   = 1800 # 30 minutes max
+
+
 def _credentials(refresh_token_env: str) -> dict:
     return {
-        "lwa_app_id":       os.environ["AMAZON_LWA_APP_ID"],
+        "lwa_app_id":        os.environ["AMAZON_LWA_APP_ID"],
         "lwa_client_secret": os.environ["AMAZON_LWA_CLIENT_SECRET"],
-        "refresh_token":    os.environ[refresh_token_env],
-        "aws_access_key":   os.environ["AMAZON_AWS_ACCESS_KEY"],
-        "aws_secret_key":   os.environ["AMAZON_AWS_SECRET_KEY"],
-        "role_arn":         os.environ["AMAZON_ROLE_ARN"],
+        "refresh_token":     os.environ[refresh_token_env],
+        "aws_access_key":    os.environ["AMAZON_AWS_ACCESS_KEY"],
+        "aws_secret_key":    os.environ["AMAZON_AWS_SECRET_KEY"],
+        "role_arn":          os.environ["AMAZON_ROLE_ARN"],
     }
+
+
+def _request_and_download(api: Reports, marketplace_id: str) -> list[dict]:
+    resp = api.create_report(
+        reportType=REPORT_TYPE,
+        marketplaceIds=[marketplace_id],
+    )
+    report_id = resp.payload["reportId"]
+
+    deadline = time.monotonic() + POLL_TIMEOUT
+    time.sleep(INITIAL_WAIT)
+    while time.monotonic() < deadline:
+        resp = api.get_report(report_id)
+        status = resp.payload.get("processingStatus")
+        if status == "DONE":
+            break
+        if status in ("CANCELLED", "FATAL"):
+            raise RuntimeError(f"Amazon report {report_id} ended with status {status}")
+        time.sleep(POLL_INTERVAL)
+    else:
+        raise RuntimeError(f"Amazon report {report_id} did not complete within {POLL_TIMEOUT}s")
+
+    document_id = resp.payload["reportDocumentId"]
+    doc_resp = api.get_report_document(document_id, download=True, character_code="iso-8859-1")
+    text = doc_resp.payload["document"]
+
+    reader = csv.DictReader(io.StringIO(text), delimiter="\t")
+    return list(reader)
+
+
+def _is_canonical_mx(sku: str) -> bool:
+    s = sku.upper()
+    if s.endswith("-USA") or "-USA-" in s:
+        return False
+    if sku.startswith("Stickered.") or sku.startswith("Uncommingled."):
+        return False
+    if " " in sku:
+        return False
+    if not (s.startswith("SAR-") or s.startswith("SCL-")):
+        return False
+    return True
+
+
+def _int(rec: dict, key: str) -> int:
+    try:
+        return int(float(rec.get(key) or 0))
+    except (ValueError, TypeError):
+        return 0
+
 
 def run(snapshot_date: date, marketplace: str = "us") -> int:
     mp, token_env, source = MARKETPLACE_MAP[marketplace]
     creds = _credentials(token_env)
+    api = Reports(marketplace=mp, credentials=creds)
 
-    api = Inventories(marketplace=mp, credentials=creds)
+    try:
+        records = _request_and_download(api, mp.marketplace_id)
+    except SellingApiException as exc:
+        raise RuntimeError(f"SP-API error ({marketplace}): {exc}") from exc
 
-    all_items = []
-    next_token = None
-
-    while True:
-        kwargs = {"details": True, "granularityType": "Marketplace", "granularityId": mp.marketplace_id}
-        if next_token:
-            kwargs["nextToken"] = next_token
-
-        try:
-            resp = api.get_inventory_summary_marketplace(**kwargs)
-        except SellerApiException as exc:
-            raise RuntimeError(f"SP-API error ({marketplace}): {exc}") from exc
-
-        summaries = (resp.payload or {}).get("inventorySummaries", [])
-        all_items.extend(summaries)
-
-        next_token = (getattr(resp, "pagination", None) or {}).get("nextToken")
-        if not next_token:
-            break
-
-    # Deduplicate: one row per ASIN. Multiple seller SKUs share identical inventory counts.
-    # US: prefer the SKU ending with "-USA".
-    # MX: prefer the clean base SKU (no -USA suffix, no spaces, no auto-generated strings).
-    def _is_canonical_mx(sku: str) -> bool:
-        s = sku.upper()
-        if s.endswith("-USA") or "-USA-" in s:
-            return False
-        if sku.startswith("Stickered.") or sku.startswith("Uncommingled."):
-            return False
-        if " " in sku:
-            return False
-        if not (s.startswith("SAR-") or s.startswith("SCL-")):
-            return False
-        return True
-
+    # Deduplicate: one row per ASIN; multiple seller SKUs share the same inventory counts.
+    # US: prefer the SKU ending with -USA. MX: prefer the clean base SKU.
     by_asin: dict[str, dict] = {}
-    for item in all_items:
-        asin = item["asin"]
-        sku = item.get("sellerSku", "")
+    for rec in records:
+        asin = rec.get("asin", "").strip()
+        sku  = rec.get("sku", "").strip()
+        if not asin:
+            continue
         if asin not in by_asin:
-            by_asin[asin] = item
+            by_asin[asin] = rec
         else:
-            current_sku = by_asin[asin].get("sellerSku", "")
+            current_sku = by_asin[asin].get("sku", "")
             if marketplace == "us":
                 if sku.upper().endswith("-USA"):
-                    by_asin[asin] = item
+                    by_asin[asin] = rec
             else:
                 curr_ok = _is_canonical_mx(current_sku)
-                new_ok = _is_canonical_mx(sku)
+                new_ok  = _is_canonical_mx(sku)
                 if new_ok and (not curr_ok or sku < current_sku):
-                    by_asin[asin] = item
-    all_items = list(by_asin.values())
+                    by_asin[asin] = rec
 
-    external_ids = [item["asin"] for item in all_items]
+    external_ids = list(by_asin.keys())
     sku_map = resolve_internal_skus(source, external_ids)
 
     rows = []
-    for item in all_items:
-        asin = item["asin"]
-        seller_sku = item.get("sellerSku", "")
-        inv_details = item.get("inventoryDetails", {})
-        fulfillable = inv_details.get("fulfillableQuantity", 0) or 0
+    for asin, rec in by_asin.items():
         inbound = (
-            (inv_details.get("inboundWorkingQuantity") or 0)
-            + (inv_details.get("inboundShippedQuantity") or 0)
-            + (inv_details.get("inboundReceivingQuantity") or 0)
+            _int(rec, "afn-inbound-working-quantity")
+            + _int(rec, "afn-inbound-shipped-quantity")
+            + _int(rec, "afn-inbound-receiving-quantity")
         )
-        reserved = (inv_details.get("reservedQuantity", {}) or {}).get("totalReservedQuantity", 0) or 0
-        total = item.get("totalQuantity", 0) or 0
-
         rows.append({
             "snapshot_date": snapshot_date,
-            "source": source,
-            "internal_sku": sku_map.get(asin),
-            "external_id": asin,
-            "external_sku": seller_sku,
-            "qty_on_hand": total,
-            "qty_reserved": reserved,
-            "qty_available": fulfillable,
-            "qty_inbound": inbound,
-            "raw_data": json.dumps(item),
+            "source":        source,
+            "internal_sku":  sku_map.get(asin),
+            "external_id":   asin,
+            "external_sku":  rec.get("sku", "").strip(),
+            "qty_on_hand":   _int(rec, "afn-warehouse-quantity"),
+            "qty_reserved":  _int(rec, "reserved-qty-total"),
+            "qty_available": _int(rec, "afn-fulfillable-quantity"),
+            "qty_inbound":   inbound,
+            "raw_data":      json.dumps(rec),
         })
 
     return upsert_snapshots(rows)
