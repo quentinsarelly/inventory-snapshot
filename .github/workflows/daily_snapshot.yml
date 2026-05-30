@@ -48,6 +48,10 @@ jobs:
           TIKTOK_SHOP_ID:            ${{ secrets.TIKTOK_SHOP_ID }}
           TIKTOK_SHOP_CYPHER:        ${{ secrets.TIKTOK_SHOP_CYPHER }}
           SHIPHERO_REFRESH_TOKEN:    ${{ secrets.SHIPHERO_REFRESH_TOKEN }}
-          US_3PL_BASE_URL:           ${{ secrets.US_3PL_BASE_URL }}
-          US_3PL_API_KEY:            ${{ secrets.US_3PL_API_KEY }}
+          CAMELOT_SOAP_URL:          ${{ secrets.CAMELOT_SOAP_URL }}
+          CAMELOT_USERNAME:          ${{ secrets.CAMELOT_USERNAME }}
+          CAMELOT_PASSWORD:          ${{ secrets.CAMELOT_PASSWORD }}
+          CAMELOT_INTERFACE_PROFILE: ${{ secrets.CAMELOT_INTERFACE_PROFILE }}
+          CAMELOT_CLIENT:            ${{ secrets.CAMELOT_CLIENT }}
+          CAMELOT_TRADING_PARTNER:   ${{ secrets.CAMELOT_TRADING_PARTNER }}
         run: python run_all.py
