@@ -10,12 +10,14 @@ Requires: AMAZON_LWA_APP_ID, AMAZON_LWA_CLIENT_SECRET,
           AMAZON_AWS_ACCESS_KEY, AMAZON_AWS_SECRET_KEY, AMAZON_ROLE_ARN
 """
 import csv
+import gzip
 import io
 import json
 import os
 import time
 from datetime import date
 
+import requests as http_requests
 from dotenv import load_dotenv
 from sp_api.api import Reports
 from sp_api.base import Marketplaces, SellingApiException
@@ -30,8 +32,8 @@ MARKETPLACE_MAP = {
 }
 
 REPORT_TYPE    = "GET_FBA_MYI_UNSUPPRESSED_INVENTORY_DATA"
-INITIAL_WAIT   = 60   # seconds before first status check
-POLL_INTERVAL  = 30   # seconds between subsequent checks
+INITIAL_WAIT   = 15   # seconds before first status check
+POLL_INTERVAL  = 15   # seconds between subsequent checks
 POLL_TIMEOUT   = 1800 # 30 minutes max
 
 
@@ -46,7 +48,12 @@ def _credentials(refresh_token_env: str) -> dict:
     }
 
 
-def _request_and_download(api: Reports, marketplace_id: str) -> list[dict]:
+FATAL_RETRIES  = 3
+FATAL_BACKOFF  = 120  # seconds to wait before retrying after FATAL
+
+
+def _run_report(api: Reports, marketplace_id: str) -> str:
+    """Request a report and poll until DONE. Returns reportDocumentId."""
     resp = api.create_report(
         reportType=REPORT_TYPE,
         marketplaceIds=[marketplace_id],
@@ -59,16 +66,35 @@ def _request_and_download(api: Reports, marketplace_id: str) -> list[dict]:
         resp = api.get_report(report_id)
         status = resp.payload.get("processingStatus")
         if status == "DONE":
-            break
+            return resp.payload["reportDocumentId"]
         if status in ("CANCELLED", "FATAL"):
             raise RuntimeError(f"Amazon report {report_id} ended with status {status}")
         time.sleep(POLL_INTERVAL)
+    raise RuntimeError(f"Amazon report {report_id} did not complete within {POLL_TIMEOUT}s")
+
+
+def _request_and_download(api: Reports, marketplace_id: str) -> list[dict]:
+    last_exc: Exception | None = None
+    for attempt in range(1, FATAL_RETRIES + 1):
+        try:
+            document_id = _run_report(api, marketplace_id)
+            break
+        except RuntimeError as exc:
+            last_exc = exc
+            if attempt < FATAL_RETRIES:
+                time.sleep(FATAL_BACKOFF)
     else:
-        raise RuntimeError(f"Amazon report {report_id} did not complete within {POLL_TIMEOUT}s")
+        raise last_exc
 
     document_id = resp.payload["reportDocumentId"]
-    doc_resp = api.get_report_document(document_id, download=True, character_code="iso-8859-1")
-    text = doc_resp.payload["document"]
+    doc_resp = api.get_report_document(document_id)
+    url = doc_resp.payload["url"]
+    is_gzip = doc_resp.payload.get("compressionAlgorithm") == "GZIP"
+
+    raw = http_requests.get(url, timeout=120).content
+    if is_gzip:
+        raw = gzip.decompress(raw)
+    text = raw.decode("iso-8859-1")
 
     reader = csv.DictReader(io.StringIO(text), delimiter="\t")
     return list(reader)
