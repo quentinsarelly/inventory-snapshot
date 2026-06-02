@@ -68,7 +68,9 @@ def _run_report(api: Reports, marketplace_id: str) -> str:
         if status == "DONE":
             return resp.payload["reportDocumentId"]
         if status in ("CANCELLED", "FATAL"):
-            raise RuntimeError(f"Amazon report {report_id} ended with status {status}")
+            raise RuntimeError(
+                f"Amazon report {report_id} ended with status {status}: {resp.payload}"
+            )
         time.sleep(POLL_INTERVAL)
     raise RuntimeError(f"Amazon report {report_id} did not complete within {POLL_TIMEOUT}s")
 
