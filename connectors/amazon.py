@@ -86,7 +86,6 @@ def _request_and_download(api: Reports, marketplace_id: str) -> list[dict]:
     else:
         raise last_exc
 
-    document_id = resp.payload["reportDocumentId"]
     doc_resp = api.get_report_document(document_id)
     url = doc_resp.payload["url"]
     is_gzip = doc_resp.payload.get("compressionAlgorithm") == "GZIP"
