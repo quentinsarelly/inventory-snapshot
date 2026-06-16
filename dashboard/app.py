@@ -12,6 +12,7 @@ load_dotenv()
 st.set_page_config(page_title="Sarelly Inventory", layout="wide")
 
 SOURCES = ["shopify_us", "shopify_mx", "amazon_us", "amazon_mx", "tiktok_us", "us_3pl", "mx_3pl"]
+TABLE_SOURCES = ["amazon_us", "amazon_mx", "tiktok_us", "us_3pl", "mx_3pl"]
 SOURCE_LABELS = {
     "shopify_us": "Shopify US",
     "shopify_mx": "Shopify MX",
@@ -208,10 +209,18 @@ st.title("Sarelly — Inventory Snapshot")
 st.caption(f"Data as of {selected_date}")
 
 df = load_inventory(selected_date)
+df_retail = load_retail_inventory(selected_date)
 
 if df.empty:
     st.warning("No data for this date.")
     st.stop()
+
+# Merge retail total into main table
+if not df_retail.empty:
+    df = df.merge(df_retail[["internal_sku", "Total Retail"]], on="internal_sku", how="left")
+    df["Total Retail"] = df["Total Retail"].fillna(0).astype(int)
+else:
+    df["Total Retail"] = 0
 
 if selected_category != "All":
     df = df[df["category"] == selected_category]
@@ -233,18 +242,21 @@ st.dataframe(rates_df, use_container_width=False, hide_index=True)
 st.divider()
 
 # ── Table ─────────────────────────────────────────────────────────────────────
-col_rename = {s: SOURCE_LABELS[s] for s in SOURCES}
+df["table_total"] = df[TABLE_SOURCES].sum(axis=1)
+
+col_rename = {s: SOURCE_LABELS[s] for s in TABLE_SOURCES}
 col_rename.update({f"inbound_{s}": INBOUND_LABELS[s] for s in INBOUND_SOURCES})
 col_rename.update({"internal_sku": "SKU", "display_name": "Name",
-                   "category": "Category", "total_available": "Total"})
+                   "category": "Category", "table_total": "Total",
+                   "Total Retail": "Retail"})
 
-# Column order: meta, then each source followed by its inbound column if applicable
+# Column order: meta, then each table source followed by its inbound column if applicable
 ordered_cols = ["internal_sku", "display_name", "category"]
-for src in SOURCES:
+for src in TABLE_SOURCES:
     ordered_cols.append(src)
     if src in INBOUND_SOURCES:
         ordered_cols.append(f"inbound_{src}")
-ordered_cols.append("total_available")
+ordered_cols += ["Total Retail", "table_total"]
 
 df_display = df[ordered_cols].rename(columns=col_rename)
 
@@ -252,24 +264,17 @@ def highlight_low(row):
     color = "background-color: #fff3cd" if row["Total"] < reorder_threshold else ""
     return [color] * len(row)
 
-st.subheader(f"{len(df)} SKUs")
+st.subheader(f"Total stock available — {len(df)} SKUs")
 st.dataframe(
     df_display.style.apply(highlight_low, axis=1),
     use_container_width=True,
     height=500,
 )
 
-# ── Bar chart ─────────────────────────────────────────────────────────────────
-st.subheader("Available units by SKU (top 30)")
-chart_df = df.head(30).set_index("display_name")[SOURCES].rename(columns=SOURCE_LABELS)
-st.bar_chart(chart_df, height=400)
-
 st.divider()
 
 # ── Retail location breakdown ──────────────────────────────────────────────────
 st.subheader("Retail inventory by location (Shopify MX stores + Julius)")
-
-df_retail = load_retail_inventory(selected_date)
 
 if df_retail.empty:
     st.info("No retail location data for this date. Run the connector to populate.")
