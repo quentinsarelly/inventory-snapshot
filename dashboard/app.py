@@ -285,7 +285,7 @@ MX_LABELS  = {
 
 df_mx = df[["internal_sku", "display_name", "category"] + MX_SOURCES].copy()
 df_mx["mx_total"] = df_mx[MX_SOURCES].sum(axis=1)
-df_mx = df_mx.sort_values("mx_total", ascending=False)
+df_mx = df_mx[df_mx["mx_total"] > 0].sort_values("mx_total", ascending=False)
 mx_display_cols = ["internal_sku", "display_name", "category"] + MX_SOURCES + ["mx_total"]
 mx_col_rename = {**MX_LABELS, "internal_sku": "SKU", "display_name": "Name", "category": "Category"}
 
@@ -307,7 +307,7 @@ US_LABELS  = {
 
 df_us = df[["internal_sku", "display_name", "category"] + US_SOURCES].copy()
 df_us["us_total"] = df_us[US_SOURCES].sum(axis=1)
-df_us = df_us.sort_values("us_total", ascending=False)
+df_us = df_us[df_us["us_total"] > 0].sort_values("us_total", ascending=False)
 us_display_cols = ["internal_sku", "display_name", "category"] + US_SOURCES + ["us_total"]
 us_col_rename = {**US_LABELS, "internal_sku": "SKU", "display_name": "Name", "category": "Category"}
 
