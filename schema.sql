@@ -68,3 +68,11 @@ CREATE TABLE inventory_location_snapshots (
     fetched_at    TIMESTAMPTZ  DEFAULT NOW(),
     UNIQUE(snapshot_date, location_id, external_sku)
 );
+
+-- Distinct snapshot dates, for the dashboard's date picker.
+-- Querying inventory_snapshots directly and de-duplicating client-side only
+-- reaches back a few days once row counts grow, which hides older reports.
+CREATE OR REPLACE VIEW snapshot_dates AS
+SELECT DISTINCT snapshot_date
+FROM inventory_snapshots
+ORDER BY snapshot_date DESC;

@@ -1,6 +1,7 @@
 """Streamlit dashboard — daily inventory by SKU across all sources."""
+import io
 import os
-from datetime import date
+from datetime import date, datetime
 
 import pandas as pd
 import streamlit as st
@@ -39,16 +40,37 @@ def get_client() -> Client:
 
 
 @st.cache_data(ttl=300)
-def load_available_dates() -> list[str]:
+def load_available_dates() -> tuple[list[str], bool]:
+    """Returns (dates, used_fallback).
+
+    Prefers the snapshot_dates view (see schema.sql), which returns every
+    distinct date. Falls back to de-duplicating raw snapshot rows if the view
+    has not been created yet — that path only reaches back a few days, since
+    5000 rows is roughly a week at ~149 SKUs across 7 sources.
+    """
+    client = get_client()
+    try:
+        resp = (
+            client.table("snapshot_dates")
+            .select("snapshot_date")
+            .order("snapshot_date", desc=True)
+            .limit(730)
+            .execute()
+        )
+        dates = [r["snapshot_date"] for r in resp.data]
+        if dates:
+            return dates, False
+    except Exception:
+        pass
+
     resp = (
-        get_client()
-        .table("inventory_snapshots")
+        client.table("inventory_snapshots")
         .select("snapshot_date")
         .order("snapshot_date", desc=True)
         .limit(5000)
         .execute()
     )
-    return sorted(set(r["snapshot_date"] for r in resp.data), reverse=True)[:90]
+    return sorted({r["snapshot_date"] for r in resp.data}, reverse=True), True
 
 
 @st.cache_data(ttl=300)
@@ -194,10 +216,36 @@ def load_instock_rates(snapshot_date: str) -> pd.DataFrame:
     return pd.DataFrame(rows)
 
 
+def build_excel(sheets: dict[str, pd.DataFrame]) -> bytes:
+    """Render the report frames to a single multi-sheet .xlsx workbook."""
+    buf = io.BytesIO()
+    with pd.ExcelWriter(buf, engine="xlsxwriter") as writer:
+        header = writer.book.add_format(
+            {"bold": True, "bg_color": "#F0F2F6", "border": 1, "text_wrap": True, "valign": "top"}
+        )
+        for name, frame in sheets.items():
+            sheet = name[:31]  # Excel caps sheet names at 31 chars
+            frame.to_excel(writer, sheet_name=sheet, index=False)
+            ws = writer.sheets[sheet]
+            ws.freeze_panes(1, 0)
+            if len(frame.columns):
+                ws.autofilter(0, 0, max(len(frame), 1), len(frame.columns) - 1)
+            for i, col in enumerate(frame.columns):
+                ws.write(0, i, str(col), header)
+                body = int(frame[col].astype(str).str.len().max()) if len(frame) else 0
+                ws.set_column(i, i, min(max(body, len(str(col))) + 2, 45))
+    return buf.getvalue()
+
+
 # ── Sidebar ───────────────────────────────────────────────────────────────────
 st.sidebar.title("Filters")
-available_dates = load_available_dates()
+available_dates, dates_fallback = load_available_dates()
 selected_date = st.sidebar.selectbox("Snapshot date", available_dates, index=0)
+if dates_fallback:
+    st.sidebar.caption(
+        "⚠️ Showing only recent dates — run the `snapshot_dates` view from "
+        "`schema.sql` against Supabase to reach the full history."
+    )
 reorder_threshold = st.sidebar.number_input("Highlight below (total units)", min_value=0, value=50)
 selected_category = st.sidebar.selectbox("Category", ["All"] + sorted({
     r["category"] for r in get_client().table("sku_master").select("category").execute().data
@@ -289,8 +337,10 @@ df_mx = df_mx[df_mx["mx_total"] > 0].sort_values("mx_total", ascending=False)
 mx_display_cols = ["internal_sku", "display_name", "category"] + MX_SOURCES + ["mx_total"]
 mx_col_rename = {**MX_LABELS, "internal_sku": "SKU", "display_name": "Name", "category": "Category"}
 
+mx_display = df_mx[mx_display_cols].rename(columns=mx_col_rename)
+
 st.subheader(f"Total Mexico — {len(df_mx)} SKUs")
-st.dataframe(df_mx[mx_display_cols].rename(columns=mx_col_rename), use_container_width=True, height=500)
+st.dataframe(mx_display, use_container_width=True, height=500)
 
 st.divider()
 
@@ -311,13 +361,17 @@ df_us = df_us[df_us["us_total"] > 0].sort_values("us_total", ascending=False)
 us_display_cols = ["internal_sku", "display_name", "category"] + US_SOURCES + ["us_total"]
 us_col_rename = {**US_LABELS, "internal_sku": "SKU", "display_name": "Name", "category": "Category"}
 
+us_display = df_us[us_display_cols].rename(columns=us_col_rename)
+
 st.subheader(f"Total US — {len(df_us)} SKUs")
-st.dataframe(df_us[us_display_cols].rename(columns=us_col_rename), use_container_width=True, height=500)
+st.dataframe(us_display, use_container_width=True, height=500)
 
 st.divider()
 
 # ── Retail location breakdown ──────────────────────────────────────────────────
 st.subheader("Retail inventory by location (Shopify MX stores + Julius)")
+
+retail_display = pd.DataFrame()
 
 if df_retail.empty:
     st.info("No retail location data for this date. Run the connector to populate.")
@@ -327,8 +381,40 @@ else:
 
     retail_col_rename = {"internal_sku": "SKU", "display_name": "Name", "category": "Category"}
     display_cols = ["internal_sku", "display_name", "category"] + RETAIL_LOCATIONS + ["Total Retail"]
-    st.dataframe(
-        df_retail[display_cols].rename(columns=retail_col_rename),
-        use_container_width=True,
-        height=500,
-    )
+    retail_display = df_retail[display_cols].rename(columns=retail_col_rename)
+    st.dataframe(retail_display, use_container_width=True, height=500)
+
+
+# ── Export ────────────────────────────────────────────────────────────────────
+# Rendered into the sidebar next to the date filter, but built here so it can
+# reuse the same frames the tables above display (category filter included).
+report_info = pd.DataFrame(
+    [
+        ("Snapshot date", selected_date),
+        ("Category filter", selected_category),
+        ("SKUs in report", str(len(df))),
+        ("Generated at", datetime.now().strftime("%Y-%m-%d %H:%M")),
+    ],
+    columns=["Field", "Value"],
+)
+
+export_sheets = {
+    "Report Info": report_info,
+    "All Sources": df_display,
+    "Total Mexico": mx_display,
+    "Total US": us_display,
+    "In-Stock Rates": rates_df,
+}
+if not retail_display.empty:
+    export_sheets["Retail by Location"] = retail_display
+
+st.sidebar.divider()
+st.sidebar.subheader("Export")
+st.sidebar.download_button(
+    "⬇️  Download Excel report",
+    data=build_excel(export_sheets),
+    file_name=f"sarelly_inventory_{selected_date}.xlsx",
+    mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+    use_container_width=True,
+)
+st.sidebar.caption(f"Snapshot as of {selected_date}.")
