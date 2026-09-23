@@ -10,3 +10,6 @@ __pycache__/
 # Exclude private information
 sku_matching_review.csv
 cleanup/
+
+# WSL metadata stubs from Windows file copies
+*:Zone.Identifier

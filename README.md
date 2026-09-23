@@ -30,6 +30,23 @@ python run_all.py            # live write to Supabase
 python run_all.py --dry-run  # fetch only, print quality report, no DB writes
 ```
 
+### Dashboard
+
+```bash
+streamlit run dashboard/app.py
+```
+
+Pick a **Snapshot date** in the sidebar, then **Download Excel report** to get a
+single `.xlsx` for sharing with finance. The workbook has one sheet per table —
+Report Info, All Sources, Total Mexico, Total US, In-Stock Rates, and Retail by
+Location — and respects the sidebar Category filter.
+
+> **One-time setup:** the date picker reads the `snapshot_dates` view. Run that
+> statement from `schema.sql` once against Supabase. Without it PostgREST caps
+> responses at 1000 rows — about one day of snapshots — so only the most recent
+> date is selectable and past reports cannot be pulled. The dashboard shows a
+> warning in the sidebar while the view is missing.
+
 ## Maintenance
 
 ### TikTok — refresh token expires every ~30 days
