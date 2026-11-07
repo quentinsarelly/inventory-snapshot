@@ -17,11 +17,11 @@ import os
 import time
 from datetime import date
 
-import requests as http_requests
 from dotenv import load_dotenv
 from sp_api.api import Reports
 from sp_api.base import Marketplaces, SellingApiException
 
+from connectors import _http
 from db.client import resolve_internal_skus, upsert_snapshots
 
 load_dotenv()
@@ -48,8 +48,18 @@ def _credentials(refresh_token_env: str) -> dict:
     }
 
 
-FATAL_RETRIES  = 3
-FATAL_BACKOFF  = 120  # seconds to wait before retrying after FATAL
+# Amazon runs a daily maintenance pass on the FBA US dataset during which this
+# report type returns FATAL. Measured over 120 days of runs, every observed
+# failure fell inside 11:30-11:50 US Eastern (15:30-15:50 UTC under EDT,
+# 16:30-16:50 under EST) and no run outside it ever failed. The window is
+# anchored to US local time, so it moves in UTC when daylight saving changes.
+#
+# The retry budget is sized to outlast it: 5 attempts with 6 minutes between
+# them spans ~24 minutes of waiting, where the window is ~20 minutes wide.
+# The old 3 x 120s budget covered only ~6 minutes, so every attempt landed
+# inside the same outage and the source lost the day.
+FATAL_RETRIES  = 5
+FATAL_BACKOFF  = 360
 
 
 def _run_report(api: Reports, marketplace_id: str) -> str:
@@ -92,7 +102,7 @@ def _request_and_download(api: Reports, marketplace_id: str) -> list[dict]:
     url = doc_resp.payload["url"]
     is_gzip = doc_resp.payload.get("compressionAlgorithm") == "GZIP"
 
-    raw = http_requests.get(url, timeout=120).content
+    raw = _http.get(url, timeout=120).content
     if is_gzip:
         raw = gzip.decompress(raw)
     text = raw.decode("iso-8859-1")

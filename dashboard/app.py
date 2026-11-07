@@ -167,6 +167,33 @@ def load_retail_inventory(snapshot_date: str) -> pd.DataFrame:
 
 
 @st.cache_data(ttl=300)
+def load_source_coverage(snapshot_date: str, latest_date: str) -> tuple[dict[str, int], list[str]]:
+    """Returns (rows per source, sources missing for this date).
+
+    A connector that fails leaves no rows at all, which the tables below would
+    otherwise render as a plain 0 — indistinguishable from genuinely zero stock
+    and easy to hand to finance as an understated total. A source counts as
+    missing only if it has rows on the most recent snapshot date, so sources
+    that simply were not live yet on an older date are not flagged.
+    """
+    client = get_client()
+    counts: dict[str, int] = {}
+    latest: dict[str, int] = {}
+    for src in SOURCES:
+        counts[src] = client.table("inventory_snapshots").select(
+            "id", count="exact").eq("snapshot_date", snapshot_date).eq(
+            "source", src).limit(1).execute().count or 0
+        if snapshot_date == latest_date:
+            latest[src] = counts[src]
+        else:
+            latest[src] = client.table("inventory_snapshots").select(
+                "id", count="exact").eq("snapshot_date", latest_date).eq(
+                "source", src).limit(1).execute().count or 0
+    missing = [s for s in SOURCES if counts[s] == 0 and latest[s] > 0]
+    return counts, missing
+
+
+@st.cache_data(ttl=300)
 def load_instock_rates(snapshot_date: str) -> pd.DataFrame:
     # Catalog size per source = number of mappings in sku_mappings
     maps = get_client().table("sku_mappings").select("source,internal_sku").execute()
@@ -255,6 +282,16 @@ selected_category = st.sidebar.selectbox("Category", ["All"] + sorted({
 # ── Main ──────────────────────────────────────────────────────────────────────
 st.title("Sarelly — Inventory Snapshot")
 st.caption(f"Data as of {selected_date}")
+
+source_counts, missing_sources = load_source_coverage(selected_date, available_dates[0])
+if missing_sources:
+    st.error(
+        "**Incomplete data for this date — totals below understate actual stock.**\n\n"
+        + "\n".join(f"- **{SOURCE_LABELS[s]}** wrote no rows" for s in missing_sources)
+        + "\n\nThe connector for each of these failed on this date, so its units are "
+          "absent from every table and from the Excel export. Treat any total that "
+          "includes these channels as a floor, not an actual figure."
+    )
 
 df = load_inventory(selected_date)
 df_retail = load_retail_inventory(selected_date)
@@ -394,8 +431,24 @@ report_info = pd.DataFrame(
         ("Category filter", selected_category),
         ("SKUs in report", str(len(df))),
         ("Generated at", datetime.now().strftime("%Y-%m-%d %H:%M")),
+        (
+            "Data complete",
+            "YES" if not missing_sources
+            else "NO — missing " + ", ".join(SOURCE_LABELS[s] for s in missing_sources),
+        ),
     ],
     columns=["Field", "Value"],
+)
+
+coverage_info = pd.DataFrame(
+    [
+        {
+            "Channel": SOURCE_LABELS[s],
+            "Rows written": source_counts[s],
+            "Status": "MISSING — connector failed" if s in missing_sources else "ok",
+        }
+        for s in SOURCES
+    ]
 )
 
 export_sheets = {
@@ -404,6 +457,7 @@ export_sheets = {
     "Total Mexico": mx_display,
     "Total US": us_display,
     "In-Stock Rates": rates_df,
+    "Data Coverage": coverage_info,
 }
 if not retail_display.empty:
     export_sheets["Retail by Location"] = retail_display

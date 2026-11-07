@@ -10,7 +10,7 @@ from datetime import datetime
 from zoneinfo import ZoneInfo
 
 from connectors import shopify, amazon, tiktok, us_3pl, mx_3pl
-from db.client import refresh_unified_view
+from db.client import count_snapshot_rows, refresh_unified_view
 
 CONNECTORS = [
     ("shopify_us", lambda d: shopify.run(d, store="us"),  shopify),
@@ -38,6 +38,31 @@ def _quality_report(name: str, rows: list[dict]) -> None:
         print(f"      {sku:<32} internal={isku:<20} qty={qty}")
     if total > 5:
         print(f"      ... and {total - 5} more")
+
+
+def _coverage_report(snapshot_date, expected: list[str]) -> list[str]:
+    """Print rows-written per source; return the sources that wrote nothing.
+
+    A connector can raise (caught above) or quietly return zero rows; either way
+    the day has a hole. Reporting it at the end of the run is what makes the gap
+    visible while it can still be refilled — every connector reads *current*
+    inventory, so once the date rolls over the day is lost for good.
+    """
+    print(f"\n{'─' * 60}")
+    print(f"Coverage for {snapshot_date}:")
+    gaps = []
+    for source in expected:
+        try:
+            n = count_snapshot_rows(snapshot_date, source)
+        except Exception as exc:
+            print(f"  {source:<12} ?  (coverage check failed: {exc})")
+            continue
+        if n == 0:
+            gaps.append(source)
+            print(f"  {source:<12} 0  <-- NO DATA")
+        else:
+            print(f"  {source:<12} {n}")
+    return gaps
 
 
 def main():
@@ -87,6 +112,8 @@ def main():
                 print(f"[ERROR] {name}: {exc}", file=sys.stderr)
                 errors.append(name)
 
+    gaps: list[str] = []
+
     if dry_run:
         print(f"\n{'─' * 60}")
         print("Dry run complete — database unchanged.")
@@ -95,8 +122,24 @@ def main():
         print("Refreshing unified view...")
         refresh_unified_view()
 
+        gaps[:] = _coverage_report(snapshot_date, [name for name, _, _ in CONNECTORS])
+        if gaps:
+            print(
+                f"\nMISSING DATA for {snapshot_date}: {', '.join(gaps)}\n"
+                "These sources wrote no rows. Connectors read CURRENT inventory, so\n"
+                f"this gap can only be refilled while it is still {snapshot_date} —\n"
+                "after that the day is permanently incomplete. To refill one source:\n"
+                "    python -c \"from datetime import date; from connectors import amazon; \\\n"
+                "        amazon.run(date.today(), marketplace='us')\"\n"
+                "then re-run the view refresh.",
+                file=sys.stderr,
+            )
+
     if errors:
         print(f"\nFailed sources: {', '.join(errors)}", file=sys.stderr)
+    if errors or gaps:
+        # Gaps without errors mean a connector returned no rows but did not
+        # raise; that is still an incomplete day, so fail the run either way.
         sys.exit(1)
 
 

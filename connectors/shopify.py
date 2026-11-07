@@ -14,6 +14,7 @@ from datetime import date
 import requests
 from dotenv import load_dotenv
 
+from connectors import _http
 from db.client import resolve_internal_skus, upsert_snapshots, upsert_location_snapshots
 
 load_dotenv()
@@ -43,7 +44,7 @@ def _get_token(shop_domain: str, token_env: str) -> str:
     # client_credentials tokens don't expire, so this is safe to store as a secret.
     if token := os.getenv(token_env):
         return token
-    resp = requests.post(
+    resp = _http.post(
         f"https://{shop_domain}.myshopify.com/admin/oauth/access_token",
         data={
             "client_id": CLIENT_ID,
@@ -57,7 +58,9 @@ def _get_token(shop_domain: str, token_env: str) -> str:
 
 
 def _session(token: str) -> requests.Session:
-    s = requests.Session()
+    # Retrying session; the explicit 429 handling below still applies once the
+    # adapter's own Retry-After waits are exhausted.
+    s = _http.session()
     s.headers.update({"X-Shopify-Access-Token": token, "Content-Type": "application/json"})
     return s
 

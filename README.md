@@ -47,6 +47,51 @@ Location — and respects the sidebar Category filter.
 > date is selectable and past reports cannot be pulled. The dashboard shows a
 > warning in the sidebar while the view is missing.
 
+## Data gaps
+
+Every connector reads **current** inventory — no API here supports a historical
+query. A source that fails therefore leaves a hole that can only be refilled
+**on the same day**; once the date rolls over (Mexico City time, which is what
+`snapshot_date` uses) that day is permanently incomplete. Backfilling later
+would write today's stock under an older date, which is worse than a gap.
+
+So when a run fails, fix it that day. `run_all.py` prints a per-source coverage
+table at the end and exits non-zero if any source wrote zero rows — including a
+connector that returned nothing without raising. The dashboard shows a red
+banner on any date with a missing source, and the Excel export carries a
+**Data Coverage** sheet plus a `Data complete` row, so an incomplete report
+cannot be handed to finance unnoticed.
+
+To refill one source on the day it failed:
+
+```bash
+source /home/quent/sarelly-venv/bin/activate
+PYTHONPATH=. python3 -c "
+from datetime import datetime; from zoneinfo import ZoneInfo
+from connectors import amazon
+from db.client import refresh_unified_view
+d = datetime.now(ZoneInfo('America/Mexico_City')).date()
+print(amazon.run(d, marketplace='us'), 'rows')
+refresh_unified_view()"
+```
+
+Known permanent gaps: `amazon_us` on 2026-09-25, 10-04, 10-14, 10-20, 10-21,
+10-22; `mx_3pl` on 2026-11-01.
+
+### Transient failures and the Amazon maintenance window
+
+`connectors/_http.py` retries transient transport failures (429, 5xx,
+connection resets, read timeouts) for every connector — 5 retries over ~60s.
+Genuine 4xx responses are not retried.
+
+Amazon additionally runs a daily maintenance pass on the FBA US dataset during
+which the `amazon_us` report returns `FATAL`. Measured across 120 days, every
+failure fell inside **11:30-11:50 US Eastern** and no run outside it ever
+failed. The window is anchored to US local time, so in UTC it sits at
+15:30-15:50 under EDT and 16:30-16:50 under EST. `connectors/amazon.py` retries
+5 times with 6-minute backoff (~24 minutes) to outlast it, and the cron avoids
+scheduling into it — see the comment in the workflow.
+
 ## Maintenance
 
 ### TikTok — refresh token expires every ~30 days

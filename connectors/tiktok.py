@@ -12,9 +12,9 @@ import os
 import time
 from datetime import date
 
-import requests
 from dotenv import load_dotenv
 
+from connectors import _http
 from db.client import resolve_internal_skus, upsert_snapshots
 
 load_dotenv()
@@ -30,7 +30,7 @@ AUTH_URL = "https://auth.tiktok-shops.com"
 def _refresh_token() -> str:
     """Fetch a fresh access token using the refresh token. Called once per run."""
     global _access_token
-    resp = requests.get(
+    resp = _http.get(
         f"{AUTH_URL}/api/v2/token/refresh",
         params={
             "app_key":      os.environ["TIKTOK_APP_KEY"],
@@ -78,7 +78,7 @@ def _get(path: str, version: str, extra_params: dict | None = None) -> dict:
     params = {**_base_params(version), **(extra_params or {})}
     params["sign"] = _sign(app_secret, path, params)
 
-    resp = requests.get(
+    resp = _http.get(
         BASE_URL + path,
         params=params,
         headers={"x-tts-access-token": _get_token()},
@@ -97,7 +97,7 @@ def _post(path: str, version: str, body: dict, extra_params: dict | None = None)
     params = {**_base_params(version), **(extra_params or {})}
     params["sign"] = _sign(app_secret, path, params, body_str)
 
-    resp = requests.post(
+    resp = _http.post(
         BASE_URL + path,
         params=params,
         data=body_str,
