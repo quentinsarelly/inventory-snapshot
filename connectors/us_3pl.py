@@ -17,10 +17,10 @@ import os
 from datetime import date
 from xml.etree import ElementTree as ET
 
-import requests
 from requests.auth import HTTPBasicAuth
 from dotenv import load_dotenv
 
+from connectors import _http
 from db.client import resolve_internal_skus, upsert_snapshots
 
 load_dotenv()
@@ -52,7 +52,7 @@ def _call(action: str, params: dict) -> ET.Element:
         "Content-Type": "text/xml; charset=utf-8",
         "SOAPAction": f'"{_NS}"',
     }
-    resp = requests.get(
+    resp = _http.get(
         os.environ["CAMELOT_SOAP_URL"],
         data=envelope.encode("utf-8"),
         headers=headers,

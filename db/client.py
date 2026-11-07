@@ -68,5 +68,24 @@ def upsert_location_snapshots(rows: list[dict]) -> int:
     return len(rows)
 
 
+def count_snapshot_rows(snapshot_date, source: str) -> int:
+    """Rows written for one source on one snapshot date.
+
+    Used to detect a source that completed without raising but wrote nothing —
+    a silent gap, which matters because every connector reads *current*
+    inventory and so a missing day can only be refilled on the day itself.
+    """
+    resp = (
+        get_client()
+        .table("inventory_snapshots")
+        .select("id", count="exact")
+        .eq("snapshot_date", str(snapshot_date))
+        .eq("source", source)
+        .limit(1)
+        .execute()
+    )
+    return resp.count or 0
+
+
 def refresh_unified_view():
     get_client().rpc("refresh_inventory_unified").execute()

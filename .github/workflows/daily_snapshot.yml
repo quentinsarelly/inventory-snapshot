@@ -2,7 +2,18 @@ name: Daily Inventory Snapshot
 
 on:
   schedule:
-    - cron: "0 11 * * *"  # 6am ET (UTC-5) / 7am EDT (UTC-4) — adjust seasonally
+    # 11:23 UTC = 6:23am EST / 7:23am EDT. Deliberately NOT on the hour:
+    # "0 11" is a heavily contended slot and GitHub deprioritises scheduled
+    # workflows, which spread actual start times across 11:16-20:37 UTC over
+    # the last 120 days. An off-peak minute keeps the start time closer to the
+    # scheduled one.
+    #
+    # Avoid scheduling into 15:30-15:50 UTC (EDT) / 16:30-16:50 UTC (EST) —
+    # Amazon's daily FBA maintenance window, 11:30-11:50 US Eastern year-round,
+    # during which the amazon_us report returns FATAL. See connectors/amazon.py.
+    # A delayed run can still drift into it; connectors/amazon.py retries long
+    # enough to outlast it.
+    - cron: "23 11 * * *"
   workflow_dispatch:       # allow manual trigger from GitHub UI
 
 env:

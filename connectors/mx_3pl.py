@@ -9,9 +9,9 @@ import os
 import time
 from datetime import date
 
-import requests
 from dotenv import load_dotenv
 
+from connectors import _http
 from db.client import resolve_internal_skus, upsert_snapshots
 
 load_dotenv()
@@ -27,7 +27,7 @@ def _get_token() -> str:
     global _cached_token
     if _cached_token.get("expires_at", 0) > time.time() + 60:
         return _cached_token["access_token"]
-    resp = requests.post(
+    resp = _http.post(
         f"{AUTH_URL}/refresh",
         json={"refresh_token": os.environ["SHIPHERO_REFRESH_TOKEN"]},
         timeout=30,
@@ -42,7 +42,7 @@ def _get_token() -> str:
 
 
 def _query(gql: str, variables: dict = None) -> dict:
-    resp = requests.post(
+    resp = _http.post(
         GRAPHQL_URL,
         json={"query": gql, "variables": variables or {}},
         headers={"Authorization": f"Bearer {_get_token()}", "Content-Type": "application/json"},
