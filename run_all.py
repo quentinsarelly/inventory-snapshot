@@ -10,7 +10,7 @@ from datetime import datetime
 from zoneinfo import ZoneInfo
 
 from connectors import shopify, amazon, tiktok, us_3pl, mx_3pl
-from db.client import count_snapshot_rows, refresh_unified_view
+from db.client import RETAIL_SOURCE, refresh_unified_view, snapshot_coverage
 
 CONNECTORS = [
     ("shopify_us", lambda d: shopify.run(d, store="us"),  shopify),
@@ -41,27 +41,43 @@ def _quality_report(name: str, rows: list[dict]) -> None:
 
 
 def _coverage_report(snapshot_date, expected: list[str]) -> list[str]:
-    """Print rows-written per source; return the sources that wrote nothing.
+    """Print rows written and mapped per source; return the sources with a hole.
 
-    A connector can raise (caught above) or quietly return zero rows; either way
-    the day has a hole. Reporting it at the end of the run is what makes the gap
-    visible while it can still be refilled — every connector reads *current*
-    inventory, so once the date rolls over the day is lost for good.
+    Two distinct failures both leave the day unusable, so both are reported:
+
+      NO DATA     the source wrote nothing. A connector can raise (caught
+                  above) or quietly return zero rows.
+      NONE MAPPED the source wrote rows but none resolved to an internal_sku.
+                  Every dashboard table is keyed on internal_sku, so these rows
+                  are invisible there and in the Excel export even though the
+                  row count looks healthy. Mapped ratios differ widely by
+                  source (14% to 80%), so only a total collapse to zero is
+                  flagged — a percentage threshold would misfire.
+
+    Reporting at the end of the run is what makes a hole visible while it can
+    still be refilled: every connector reads *current* inventory, so once the
+    date rolls over the day is lost for good.
     """
     print(f"\n{'─' * 60}")
     print(f"Coverage for {snapshot_date}:")
+    try:
+        coverage = snapshot_coverage(snapshot_date, expected + [RETAIL_SOURCE])
+    except Exception as exc:
+        print(f"  coverage check failed: {exc}")
+        return []
+
     gaps = []
-    for source in expected:
-        try:
-            n = count_snapshot_rows(snapshot_date, source)
-        except Exception as exc:
-            print(f"  {source:<12} ?  (coverage check failed: {exc})")
-            continue
-        if n == 0:
+    for source in expected + [RETAIL_SOURCE]:
+        written, mapped = coverage[source]
+        if written == 0:
             gaps.append(source)
-            print(f"  {source:<12} 0  <-- NO DATA")
+            note = "  <-- NO DATA"
+        elif mapped == 0:
+            gaps.append(source)
+            note = "  <-- NONE MAPPED (invisible in dashboard and export)"
         else:
-            print(f"  {source:<12} {n}")
+            note = ""
+        print(f"  {source:<17} {written:>5} rows  {mapped:>5} mapped{note}")
     return gaps
 
 
@@ -125,8 +141,9 @@ def main():
         gaps[:] = _coverage_report(snapshot_date, [name for name, _, _ in CONNECTORS])
         if gaps:
             print(
-                f"\nMISSING DATA for {snapshot_date}: {', '.join(gaps)}\n"
-                "These sources wrote no rows. Connectors read CURRENT inventory, so\n"
+                f"\nINCOMPLETE DATA for {snapshot_date}: {', '.join(gaps)}\n"
+                "These sources wrote no rows, or none that map to a SKU.\n"
+                "Connectors read CURRENT inventory, so\n"
                 f"this gap can only be refilled while it is still {snapshot_date} —\n"
                 "after that the day is permanently incomplete. To refill one source:\n"
                 "    python -c \"from datetime import date; from connectors import amazon; \\\n"

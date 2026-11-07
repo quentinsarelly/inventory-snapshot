@@ -24,6 +24,12 @@ SOURCE_LABELS = {
     "mx_3pl":     "MX 3PL (ShipHero)",
 }
 
+# Synthetic source name used by the snapshot_coverage view for the retail
+# location table, which has no `source` column of its own.
+RETAIL_SOURCE = "retail_locations"
+COVERAGE_SOURCES = SOURCES + [RETAIL_SOURCE]
+COVERAGE_LABELS = {**SOURCE_LABELS, RETAIL_SOURCE: "Retail locations"}
+
 INBOUND_SOURCES = ["amazon_us", "amazon_mx", "tiktok_us"]
 INBOUND_LABELS  = {
     "amazon_us":  "Amazon US (Inbound)",
@@ -166,31 +172,74 @@ def load_retail_inventory(snapshot_date: str) -> pd.DataFrame:
     return pivot.merge(master_df, on="internal_sku", how="left").sort_values("Total Retail", ascending=False)
 
 
-@st.cache_data(ttl=300)
-def load_source_coverage(snapshot_date: str, latest_date: str) -> tuple[dict[str, int], list[str]]:
-    """Returns (rows per source, sources missing for this date).
+def _coverage_rows(snapshot_date: str) -> dict[str, tuple[int, int]]:
+    """{source: (rows_written, rows_mapped)} from the snapshot_coverage view.
 
-    A connector that fails leaves no rows at all, which the tables below would
-    otherwise render as a plain 0 — indistinguishable from genuinely zero stock
-    and easy to hand to finance as an understated total. A source counts as
-    missing only if it has rows on the most recent snapshot date, so sources
-    that simply were not live yet on an older date are not flagged.
+    Falls back to per-source count queries when the view is absent (see
+    schema.sql); that path costs a round trip per source, which is why the view
+    exists.
     """
     client = get_client()
-    counts: dict[str, int] = {}
-    latest: dict[str, int] = {}
-    for src in SOURCES:
-        counts[src] = client.table("inventory_snapshots").select(
-            "id", count="exact").eq("snapshot_date", snapshot_date).eq(
-            "source", src).limit(1).execute().count or 0
-        if snapshot_date == latest_date:
-            latest[src] = counts[src]
-        else:
-            latest[src] = client.table("inventory_snapshots").select(
-                "id", count="exact").eq("snapshot_date", latest_date).eq(
-                "source", src).limit(1).execute().count or 0
-    missing = [s for s in SOURCES if counts[s] == 0 and latest[s] > 0]
-    return counts, missing
+    out = {s: (0, 0) for s in COVERAGE_SOURCES}
+    try:
+        rows = (
+            client.table("snapshot_coverage")
+            .select("source,rows_written,rows_mapped")
+            .eq("snapshot_date", snapshot_date)
+            .execute()
+            .data
+        )
+        for r in rows:
+            if r["source"] in out:
+                out[r["source"]] = (r["rows_written"] or 0, r["rows_mapped"] or 0)
+        return out
+    except Exception:
+        for src in COVERAGE_SOURCES:
+            table = "inventory_location_snapshots" if src == RETAIL_SOURCE else "inventory_snapshots"
+            q = client.table(table).select("id", count="exact").eq("snapshot_date", snapshot_date)
+            if src != RETAIL_SOURCE:
+                q = q.eq("source", src)
+            written = q.limit(1).execute().count or 0
+            q2 = client.table(table).select("id", count="exact").eq(
+                "snapshot_date", snapshot_date).not_.is_("internal_sku", "null")
+            if src != RETAIL_SOURCE:
+                q2 = q2.eq("source", src)
+            out[src] = (written, q2.limit(1).execute().count or 0)
+        return out
+
+
+@st.cache_data(ttl=300)
+def load_source_coverage(
+    snapshot_date: str, latest_date: str
+) -> tuple[dict[str, tuple[int, int]], list[str], list[str]]:
+    """Returns (coverage, sources with no rows, sources with no mapped rows).
+
+    Two failures make a channel vanish from every table here:
+
+      no rows      the connector failed outright; the tables render a plain 0,
+                   indistinguishable from genuinely zero stock and easy to hand
+                   to finance as an understated total.
+      none mapped  rows were written but none resolved to an internal_sku.
+                   Every table is keyed on internal_sku, so the channel is just
+                   as absent while the row count looks healthy.
+
+    Either is judged against the most recent snapshot date, so a source that
+    simply was not live yet on an older date is not flagged. Mapped ratios vary
+    from 14% to 80% by source, so only a collapse to zero counts as a failure.
+    """
+    current = _coverage_rows(snapshot_date)
+    latest = current if snapshot_date == latest_date else _coverage_rows(latest_date)
+
+    no_rows, none_mapped = [], []
+    for src in COVERAGE_SOURCES:
+        written, mapped = current[src]
+        if latest[src][0] == 0:
+            continue  # source not live on the reference date; nothing to expect
+        if written == 0:
+            no_rows.append(src)
+        elif mapped == 0 and latest[src][1] > 0:
+            none_mapped.append(src)
+    return current, no_rows, none_mapped
 
 
 @st.cache_data(ttl=300)
@@ -283,14 +332,20 @@ selected_category = st.sidebar.selectbox("Category", ["All"] + sorted({
 st.title("Sarelly — Inventory Snapshot")
 st.caption(f"Data as of {selected_date}")
 
-source_counts, missing_sources = load_source_coverage(selected_date, available_dates[0])
+source_counts, no_rows, none_mapped = load_source_coverage(selected_date, available_dates[0])
+missing_sources = no_rows + none_mapped
 if missing_sources:
+    lines = [f"- **{COVERAGE_LABELS[s]}** wrote no rows" for s in no_rows]
+    lines += [
+        f"- **{COVERAGE_LABELS[s]}** wrote {source_counts[s][0]:,} rows but none map to a SKU"
+        for s in none_mapped
+    ]
     st.error(
         "**Incomplete data for this date — totals below understate actual stock.**\n\n"
-        + "\n".join(f"- **{SOURCE_LABELS[s]}** wrote no rows" for s in missing_sources)
-        + "\n\nThe connector for each of these failed on this date, so its units are "
-          "absent from every table and from the Excel export. Treat any total that "
-          "includes these channels as a floor, not an actual figure."
+        + "\n".join(lines)
+        + "\n\nEvery table here is keyed on SKU, so these channels' units are absent "
+          "from the figures below and from the Excel export. Treat any total that "
+          "includes them as a floor, not an actual figure."
     )
 
 df = load_inventory(selected_date)
@@ -434,7 +489,7 @@ report_info = pd.DataFrame(
         (
             "Data complete",
             "YES" if not missing_sources
-            else "NO — missing " + ", ".join(SOURCE_LABELS[s] for s in missing_sources),
+            else "NO — missing " + ", ".join(COVERAGE_LABELS[s] for s in missing_sources),
         ),
     ],
     columns=["Field", "Value"],
@@ -443,11 +498,16 @@ report_info = pd.DataFrame(
 coverage_info = pd.DataFrame(
     [
         {
-            "Channel": SOURCE_LABELS[s],
-            "Rows written": source_counts[s],
-            "Status": "MISSING — connector failed" if s in missing_sources else "ok",
+            "Channel": COVERAGE_LABELS[s],
+            "Rows written": source_counts[s][0],
+            "Rows mapped to SKU": source_counts[s][1],
+            "Status": (
+                "MISSING — no rows written" if s in no_rows
+                else "MISSING — rows written but none map to a SKU" if s in none_mapped
+                else "ok"
+            ),
         }
-        for s in SOURCES
+        for s in COVERAGE_SOURCES
     ]
 )
 
