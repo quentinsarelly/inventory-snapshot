@@ -110,5 +110,51 @@ SELECT snapshot_date,
 FROM inventory_location_snapshots
 GROUP BY snapshot_date;
 
--- Same lockdown as every other object here: only service_role should read it.
-REVOKE ALL ON public.snapshot_coverage FROM anon, authenticated;
+-- ─────────────────────────────────────────────────────────────────────────────
+-- Access control
+-- ─────────────────────────────────────────────────────────────────────────────
+-- Supabase grants the anon and authenticated roles full privileges on new
+-- objects in the public schema by default. On 2026-11-07 that was found to
+-- include INSERT, UPDATE, DELETE and TRUNCATE on every table here, plus SELECT
+-- on inventory_unified — the whole cross-channel history in one object, from
+-- which per-SKU sell-through can be derived by differencing dates.
+--
+-- Nothing in this project uses the anon key: both the connectors (db/client.py)
+-- and the dashboard (dashboard/app.py) authenticate as service_role, which
+-- bypasses RLS. So revoking these grants costs nothing and no RLS policies are
+-- needed — with RLS on and no policy, anon and authenticated are denied.
+--
+-- Revoking is the load-bearing step, for two reasons RLS cannot cover:
+--   * RLS does not apply to TRUNCATE. CREATE POLICY accepts only SELECT,
+--     INSERT, UPDATE and DELETE, so RLS alone would still let anon empty these
+--     tables — and the connectors read CURRENT inventory with no historical
+--     query, so a wipe is not recoverable from the upstream APIs.
+--   * Materialized views do not support RLS at all, so inventory_unified can
+--     only be protected by revoking access to it.
+
+REVOKE ALL ON public.inventory_unified            FROM anon, authenticated;
+REVOKE ALL ON public.snapshot_dates               FROM anon, authenticated;
+REVOKE ALL ON public.snapshot_coverage            FROM anon, authenticated;
+REVOKE ALL ON public.sku_master                   FROM anon, authenticated;
+REVOKE ALL ON public.sku_mappings                 FROM anon, authenticated;
+REVOKE ALL ON public.inventory_snapshots          FROM anon, authenticated;
+REVOKE ALL ON public.inventory_location_snapshots FROM anon, authenticated;
+
+-- Second layer, for the commands RLS does cover.
+ALTER TABLE public.sku_master                   ENABLE ROW LEVEL SECURITY;
+ALTER TABLE public.sku_mappings                 ENABLE ROW LEVEL SECURITY;
+ALTER TABLE public.inventory_snapshots          ENABLE ROW LEVEL SECURITY;
+ALTER TABLE public.inventory_location_snapshots ENABLE ROW LEVEL SECURITY;
+
+-- Keep objects added later from inheriting the same grants. This governs only
+-- objects created by the role that runs it, so it is a guard, not a guarantee.
+ALTER DEFAULT PRIVILEGES IN SCHEMA public REVOKE ALL ON TABLES FROM anon, authenticated;
+
+-- Verify: both queries should come back empty / false.
+--   SELECT table_name, grantee, privilege_type
+--     FROM information_schema.role_table_grants
+--    WHERE table_schema = 'public' AND grantee IN ('anon', 'authenticated');
+--   -- note: information_schema omits materialized views, so check those too
+--   SELECT c.relname, has_table_privilege('anon', 'public.'||c.relname, 'SELECT')
+--     FROM pg_class c JOIN pg_namespace n ON n.oid = c.relnamespace
+--    WHERE n.nspname = 'public' AND c.relkind = 'm';

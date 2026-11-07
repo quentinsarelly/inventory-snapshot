@@ -87,7 +87,7 @@ def main():
     errors = []
 
     if dry_run:
-        # Patch both DB functions on every connector module so no network call reaches Supabase.
+        # Patch every DB write on each connector module so nothing reaches Supabase.
         import db.client as _db
         _db_orig_upsert = _db.upsert_snapshots
         _db_orig_resolve = _db.resolve_internal_skus
@@ -107,9 +107,17 @@ def main():
 
             original_upsert = module.upsert_snapshots
             original_resolve = getattr(module, "resolve_internal_skus", None)
+            # shopify also writes retail rows via upsert_location_snapshots.
+            # Leaving it unpatched made --dry-run write to the live database:
+            # the rows landed with internal_sku = None, because the stubbed
+            # resolve_internal_skus returns an empty map, silently destroying
+            # that day's retail SKU mapping. Stub every write, not just the one.
+            original_loc_upsert = getattr(module, "upsert_location_snapshots", None)
             module.upsert_snapshots = _capture
             if original_resolve is not None:
                 module.resolve_internal_skus = lambda source, ids: {}
+            if original_loc_upsert is not None:
+                module.upsert_location_snapshots = lambda rows: len(rows)
             try:
                 fn(snapshot_date)
                 _quality_report(name, captured)
@@ -120,6 +128,8 @@ def main():
                 module.upsert_snapshots = original_upsert
                 if original_resolve is not None:
                     module.resolve_internal_skus = original_resolve
+                if original_loc_upsert is not None:
+                    module.upsert_location_snapshots = original_loc_upsert
         else:
             try:
                 count = fn(snapshot_date)
