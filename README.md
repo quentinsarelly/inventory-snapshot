@@ -55,12 +55,32 @@ query. A source that fails therefore leaves a hole that can only be refilled
 `snapshot_date` uses) that day is permanently incomplete. Backfilling later
 would write today's stock under an older date, which is worse than a gap.
 
-So when a run fails, fix it that day. `run_all.py` prints a per-source coverage
-table at the end and exits non-zero if any source wrote zero rows — including a
-connector that returned nothing without raising. The dashboard shows a red
-banner on any date with a missing source, and the Excel export carries a
+So when a run fails, fix it that day. `run_all.py` prints a coverage table at
+the end and exits non-zero on either failure mode below. The dashboard shows a
+red banner naming each affected channel, and the Excel export carries a
 **Data Coverage** sheet plus a `Data complete` row, so an incomplete report
 cannot be handed to finance unnoticed.
+
+Two distinct failures each make a channel vanish:
+
+| | what happened | why it hides |
+|---|---|---|
+| **no rows** | the connector failed outright | tables render a plain `0`, indistinguishable from genuinely zero stock |
+| **none mapped** | rows were written but none resolved to an `internal_sku` | every table is keyed on `internal_sku`, so the channel is just as absent while the row count looks healthy |
+
+The second mode is not hypothetical: on 2026-11-07 a `--dry-run` overwrote the
+retail locations' 271 mapped rows with 514 unmapped ones, which silently zeroed
+the Retail column. Row-count checks alone saw nothing wrong.
+
+Coverage spans `inventory_location_snapshots` as well as `inventory_snapshots`,
+reported under the synthetic source name `retail_locations`. Mapped ratios vary
+widely by source (14% for `mx_3pl` to 80% for `tiktok_us`), so only a collapse
+to zero is flagged — a percentage threshold would misfire.
+
+> **One-time setup:** coverage reads the `snapshot_coverage` view. Run that
+> statement from `schema.sql` once against Supabase. Without it both callers
+> fall back to one count query per source, which works but costs ~16 round
+> trips per dashboard page load.
 
 To refill one source on the day it failed:
 

@@ -81,6 +81,35 @@ FROM inventory_snapshots
 WHERE internal_sku IS NOT NULL
 ORDER BY snapshot_date DESC;
 
+-- Per-date, per-source coverage, for gap detection.
+-- Two failure modes have cost real days of data:
+--   * a source writes no rows at all (connector failed), which the dashboard
+--     would otherwise render as a plain 0, indistinguishable from zero stock;
+--   * a source writes rows but none resolve to an internal_sku, which empties
+--     the dashboard's SKU-keyed tables just as thoroughly while the row count
+--     still looks healthy. This happened to the retail locations on
+--     2026-11-07, when 271 mapped rows were replaced by 514 unmapped ones.
+-- count(internal_sku) counts non-null values, so rows_mapped is exactly the
+-- number of rows the dashboard can actually use.
+--
+-- inventory_location_snapshots is folded in under a synthetic source name so
+-- callers get one uniform shape from a single query. Checking it per-source
+-- with count queries took 14+ round trips per page load.
+CREATE OR REPLACE VIEW snapshot_coverage AS
+SELECT snapshot_date,
+       source,
+       count(*)                AS rows_written,
+       count(internal_sku)     AS rows_mapped
+FROM inventory_snapshots
+GROUP BY snapshot_date, source
+UNION ALL
+SELECT snapshot_date,
+       'retail_locations'      AS source,
+       count(*)                AS rows_written,
+       count(internal_sku)     AS rows_mapped
+FROM inventory_location_snapshots
+GROUP BY snapshot_date;
+
 -- ─────────────────────────────────────────────────────────────────────────────
 -- Access control
 -- ─────────────────────────────────────────────────────────────────────────────
@@ -105,6 +134,7 @@ ORDER BY snapshot_date DESC;
 
 REVOKE ALL ON public.inventory_unified            FROM anon, authenticated;
 REVOKE ALL ON public.snapshot_dates               FROM anon, authenticated;
+REVOKE ALL ON public.snapshot_coverage            FROM anon, authenticated;
 REVOKE ALL ON public.sku_master                   FROM anon, authenticated;
 REVOKE ALL ON public.sku_mappings                 FROM anon, authenticated;
 REVOKE ALL ON public.inventory_snapshots          FROM anon, authenticated;
