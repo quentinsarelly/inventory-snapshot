@@ -236,11 +236,37 @@ python sync_pos.py --dry-run   # fetch and print, no DB writes
 python sync_pos.py             # write today's copy
 ```
 
+**Authentication: OAuth user credentials, not a service account.** The
+organization does not allow service accounts, so the sync authenticates as a
+real Google account using a refresh token.
+
 **One-time setup:**
 1. Run the "Purchase orders" section of `schema.sql` in Supabase.
-2. In Google Cloud, create a service account (no roles needed), enable the
-   Google Sheets API, and download a JSON key.
-3. Share the PO sheet with the service account's email as **Viewer**. Keep
-   the sheet private otherwise; do not use "anyone with the link".
-4. Add GitHub secrets `GOOGLE_SERVICE_ACCOUNT_JSON` (the whole JSON file)
-   and `PO_SHEET_ID` (the ID from the sheet's URL).
+2. In Google Cloud, enable the Google Sheets API and create an OAuth client of
+   type **Desktop app** (APIs & Services -> Credentials). Download it as
+   `credentials.json` in the repo root.
+3. Set the OAuth consent screen user type to **Internal**, or publish the app.
+   Leaving it in **Testing** makes refresh tokens expire after 7 days, and the
+   daily sync then breaks silently a week later.
+4. Give the Google account you will authorize at least **Viewer** access to the
+   PO sheet. Keep the sheet private otherwise; do not use "anyone with the
+   link". Prefer a shared ops account over a personal one — the sync stops
+   working if that person loses sheet access, revokes the app, or leaves. Note
+   in your records whose account it is.
+5. Generate the token locally (opens a browser):
+   ```bash
+   python scripts/get_google_token.py
+   ```
+   It writes `token.json` and checks that the granted scopes match
+   `spreadsheets.readonly` and that a `refresh_token` was issued.
+6. Put the contents of `token.json` (one line) into the GitHub secret
+   `GOOGLE_TOKEN_JSON` and into `GOOGLE_TOKEN_JSON` in your local `.env`. Add
+   `PO_SHEET_ID` (the ID from the sheet's URL) as a secret too.
+
+`credentials.json` and `token.json` are gitignored and must never be committed:
+`token.json` contains a refresh token plus the client ID and secret.
+
+**Rotating the token:** re-run `scripts/get_google_token.py` and update both the
+GitHub secret and `.env`. Google only issues a refresh token on first consent,
+so if the script reports none, revoke the app at
+<https://myaccount.google.com/permissions> and run it again.

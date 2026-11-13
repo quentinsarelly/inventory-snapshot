@@ -13,3 +13,12 @@ cleanup/
 
 # WSL metadata stubs from Windows file copies
 *:Zone.Identifier
+
+# Google OAuth client and user token for the PO sheet sync.
+# The token file holds a refresh_token, client_id and client_secret — never
+# commit it. Both the plain and google-prefixed names are covered, since the
+# files get downloaded under either name.
+credentials.json
+token.json
+google-credentials.json
+google-token.json
