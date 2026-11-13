@@ -15,6 +15,10 @@ cleanup/
 *:Zone.Identifier
 
 # Google OAuth client and user token for the PO sheet sync.
-# token.json holds a refresh_token, client_id and client_secret — never commit it.
+# The token file holds a refresh_token, client_id and client_secret — never
+# commit it. Both the plain and google-prefixed names are covered, since the
+# files get downloaded under either name.
 credentials.json
 token.json
+google-credentials.json
+google-token.json

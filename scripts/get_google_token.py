@@ -7,8 +7,11 @@ file go into the GOOGLE_TOKEN_JSON secret (GitHub Actions) and .env (local).
 
     python scripts/get_google_token.py
 
-Needs credentials.json in the repo root: an OAuth client of type "Desktop app"
-from Google Cloud -> APIs & Services -> Credentials. Both files are gitignored.
+Needs an OAuth client of type "Desktop app" from Google Cloud -> APIs &
+Services -> Credentials. By default it is read from ./credentials.json and the
+token written to ./token.json; GOOGLE_CREDENTIALS_PATH and GOOGLE_TOKEN_PATH
+override both, so an existing layout (e.g. ./google-credentials.json) works
+unchanged. All of those names are gitignored.
 
 SCOPES is imported from the connector rather than repeated here, so the token
 is always granted exactly the scope the sync will later ask for. A token minted
@@ -17,17 +20,32 @@ available token.json (granted the read/write `spreadsheets` scope) was unusable
 for this read-only pipeline.
 """
 import json
+import os
 import pathlib
 import sys
 
+from dotenv import load_dotenv
 from google_auth_oauthlib.flow import InstalledAppFlow
 
 sys.path.insert(0, str(pathlib.Path(__file__).resolve().parent.parent))
 from connectors.po_sheet import SCOPES  # noqa: E402
 
+load_dotenv()
+
 ROOT = pathlib.Path(__file__).resolve().parent.parent
-CLIENT_SECRETS = ROOT / "credentials.json"
-TOKEN = ROOT / "token.json"
+
+
+def _path(env_var: str, default: str) -> pathlib.Path:
+    """Honour an existing layout via env var; otherwise use the repo root."""
+    raw = os.getenv(env_var)
+    if not raw:
+        return ROOT / default
+    p = pathlib.Path(raw).expanduser()
+    return p if p.is_absolute() else (ROOT / p).resolve()
+
+
+CLIENT_SECRETS = _path("GOOGLE_CREDENTIALS_PATH", "credentials.json")
+TOKEN = _path("GOOGLE_TOKEN_PATH", "token.json")
 
 
 def main() -> int:
@@ -35,7 +53,8 @@ def main() -> int:
         print(
             f"{CLIENT_SECRETS} not found.\n"
             "Create an OAuth client of type 'Desktop app' in Google Cloud "
-            "(APIs & Services -> Credentials), download the JSON, and save it there.",
+            "(APIs & Services -> Credentials), download the JSON, and save it "
+            "there — or point GOOGLE_CREDENTIALS_PATH at it.",
             file=sys.stderr,
         )
         return 1
