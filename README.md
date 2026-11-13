@@ -236,6 +236,17 @@ python sync_pos.py --dry-run   # fetch and print, no DB writes
 python sync_pos.py             # write today's copy
 ```
 
+Re-running on the same day is safe: `replace_po_lines()` deletes that day's
+rows for a tab before inserting, so counts stay stable and no duplicates
+appear. The fresh copy reflects the sheet at that moment, which is intended —
+one copy per day, the last run wins.
+
+To trigger just this step from the Actions tab, run the workflow manually and
+set **Which sources to run** to `po-sheet`. That skips the inventory
+connectors, which would otherwise be re-run and overwrite the day's snapshot
+with later stock levels. `inventory` skips the PO sheet instead; `all` (the
+default, and what the daily schedule always does) runs both.
+
 **Authentication: OAuth user credentials, not a service account.** The
 organization does not allow service accounts, so the sync authenticates as a
 real Google account using a refresh token.
