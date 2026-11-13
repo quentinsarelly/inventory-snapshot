@@ -72,6 +72,6 @@ jobs:
         env:
           SUPABASE_URL:                ${{ secrets.SUPABASE_URL }}
           SUPABASE_SERVICE_KEY:        ${{ secrets.SUPABASE_SERVICE_KEY }}
-          GOOGLE_SERVICE_ACCOUNT_JSON: ${{ secrets.GOOGLE_SERVICE_ACCOUNT_JSON }}
+          GOOGLE_TOKEN_JSON:           ${{ secrets.GOOGLE_TOKEN_JSON }}
           PO_SHEET_ID:                 ${{ secrets.PO_SHEET_ID }}
         run: python sync_pos.py

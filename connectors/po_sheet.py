@@ -19,10 +19,19 @@ Design choices:
     header right after STATUS, or from a header named "Payment status" once
     the team adds one.
 
+Authentication uses OAuth *user* credentials, not a service account: the
+organization does not allow service accounts. GOOGLE_TOKEN_JSON holds the
+contents of a token.json produced by scripts/get_google_token.py, including the
+refresh_token, client_id and client_secret. Each run exchanges the refresh
+token for a fresh access token; nothing is written back, so the refreshed
+access token is simply discarded at the end of the run.
+
 Required env vars:
-    GOOGLE_SERVICE_ACCOUNT_JSON   full JSON key of a service account that
-                                  has Viewer access to the sheet
-    PO_SHEET_ID                   spreadsheet ID from the sheet's URL
+    GOOGLE_TOKEN_JSON   contents of token.json for a Google account with at
+                        least read access to the sheet. Must contain
+                        refresh_token, client_id and client_secret, and must
+                        have been granted the scope in SCOPES below.
+    PO_SHEET_ID         spreadsheet ID from the sheet's URL
 """
 import json
 import os
@@ -31,8 +40,9 @@ from datetime import date
 from urllib.parse import quote
 
 from dotenv import load_dotenv
-from google.oauth2 import service_account
-from google.auth.transport.requests import AuthorizedSession
+from google.auth.exceptions import RefreshError
+from google.auth.transport.requests import AuthorizedSession, Request
+from google.oauth2.credentials import Credentials
 
 from db.client import replace_po_lines
 
@@ -105,8 +115,38 @@ def _fetch_tab(session: AuthorizedSession, sheet_id: str, tab: str) -> list[list
 
 
 def _session() -> AuthorizedSession:
-    info = json.loads(os.environ["GOOGLE_SERVICE_ACCOUNT_JSON"])
-    creds = service_account.Credentials.from_service_account_info(info, scopes=SCOPES)
+    """Authorized session from the OAuth user token in GOOGLE_TOKEN_JSON."""
+    raw = os.environ["GOOGLE_TOKEN_JSON"]
+    try:
+        info = json.loads(raw)
+    except json.JSONDecodeError as exc:
+        raise RuntimeError(
+            "GOOGLE_TOKEN_JSON is not valid JSON. It must hold the full contents "
+            "of token.json (see scripts/get_google_token.py)."
+        ) from exc
+
+    missing = [k for k in ("refresh_token", "client_id", "client_secret") if not info.get(k)]
+    if missing:
+        raise RuntimeError(
+            f"GOOGLE_TOKEN_JSON is missing {missing}. Regenerate it with "
+            "scripts/get_google_token.py — a token.json saved without these "
+            "cannot be refreshed unattended."
+        )
+
+    creds = Credentials.from_authorized_user_info(info, SCOPES)
+    if not creds.valid:
+        # Stored access tokens are short-lived and GitHub Actions keeps nothing
+        # between runs, so this refresh is the normal path, not an edge case.
+        try:
+            creds.refresh(Request())
+        except RefreshError as exc:
+            raise RuntimeError(
+                f"Refreshing the Google token failed: {exc}. Common causes: the "
+                "OAuth consent screen is in Testing mode, where refresh tokens "
+                "expire after 7 days (use an Internal app or publish it); the "
+                "user revoked access; or the token was granted different scopes "
+                f"than {SCOPES}."
+            ) from exc
     return AuthorizedSession(creds)
 
 

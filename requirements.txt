@@ -5,3 +5,5 @@ python-amazon-sp-api==2.1.8
 streamlit==1.35.0
 pandas==2.2.2
 google-auth==2.38.0
+# only needed by scripts/get_google_token.py (local, interactive)
+google-auth-oauthlib==1.5.0
