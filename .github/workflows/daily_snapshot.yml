@@ -66,3 +66,12 @@ jobs:
           CAMELOT_CLIENT:            ${{ secrets.CAMELOT_CLIENT }}
           CAMELOT_TRADING_PARTNER:   ${{ secrets.CAMELOT_TRADING_PARTNER }}
         run: python run_all.py
+
+      - name: Sync PO sheet
+        if: always()   # run even if an inventory connector failed; the sources are independent
+        env:
+          SUPABASE_URL:                ${{ secrets.SUPABASE_URL }}
+          SUPABASE_SERVICE_KEY:        ${{ secrets.SUPABASE_SERVICE_KEY }}
+          GOOGLE_SERVICE_ACCOUNT_JSON: ${{ secrets.GOOGLE_SERVICE_ACCOUNT_JSON }}
+          PO_SHEET_ID:                 ${{ secrets.PO_SHEET_ID }}
+        run: python sync_pos.py

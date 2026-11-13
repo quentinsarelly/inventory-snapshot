@@ -129,3 +129,20 @@ def snapshot_coverage(snapshot_date, sources: list[str]) -> dict[str, tuple[int,
 
 def refresh_unified_view():
     get_client().rpc("refresh_inventory_unified").execute()
+
+
+def replace_po_lines(snapshot_date, tab: str, rows: list[dict]) -> int:
+    """Replace one day's copy of one PO sheet tab in po_lines_raw.
+
+    Delete-then-insert rather than upsert: if the supply team deletes or moves
+    rows during the day, a re-run must not leave yesterday's row numbers behind.
+    If the insert fails after the delete, re-running the same day restores it,
+    because the sheet itself is the source of truth.
+    """
+    client = get_client()
+    client.table("po_lines_raw").delete() \
+        .eq("snapshot_date", str(snapshot_date)).eq("tab", tab).execute()
+    if not rows:
+        return 0
+    client.table("po_lines_raw").insert(rows).execute()
+    return len(rows)

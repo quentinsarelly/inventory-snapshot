@@ -218,3 +218,29 @@ All secrets are in: GitHub repo → Settings → Secrets and variables → Actio
 | `TIKTOK_SHOP_ID` | TikTok shop ID | Never |
 | `TIKTOK_SHOP_CYPHER` | TikTok shop cipher | Never |
 | `SHIPHERO_REFRESH_TOKEN` | ShipHero JWT refresh token | Long-lived |
+
+## Purchase orders (PO tracking sheet)
+
+`sync_pos.py` copies the supply team's PO sheet (tabs `TRANSITO` and
+`TRANSITO RECIBIDO `) into `po_lines_raw` once a day, as a separate step of
+the same GitHub Actions workflow. It runs even if an inventory connector
+fails, and a PO sheet problem does not mark the inventory day incomplete.
+
+Cells are stored as the text people see. Parsing and data quality checks
+happen in the `agent.po_lines` view (sarelly-inventory-agent repo). Columns
+are matched by header name, so the sheet's columns can be reordered or
+added to; if a required header disappears, the run fails with a clear error.
+
+```bash
+python sync_pos.py --dry-run   # fetch and print, no DB writes
+python sync_pos.py             # write today's copy
+```
+
+**One-time setup:**
+1. Run the "Purchase orders" section of `schema.sql` in Supabase.
+2. In Google Cloud, create a service account (no roles needed), enable the
+   Google Sheets API, and download a JSON key.
+3. Share the PO sheet with the service account's email as **Viewer**. Keep
+   the sheet private otherwise; do not use "anyone with the link".
+4. Add GitHub secrets `GOOGLE_SERVICE_ACCOUNT_JSON` (the whole JSON file)
+   and `PO_SHEET_ID` (the ID from the sheet's URL).

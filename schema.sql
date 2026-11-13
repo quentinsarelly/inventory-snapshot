@@ -158,3 +158,48 @@ ALTER DEFAULT PRIVILEGES IN SCHEMA public REVOKE ALL ON TABLES FROM anon, authen
 --   SELECT c.relname, has_table_privilege('anon', 'public.'||c.relname, 'SELECT')
 --     FROM pg_class c JOIN pg_namespace n ON n.oid = c.relnamespace
 --    WHERE n.nspname = 'public' AND c.relkind = 'm';
+
+
+-- ============================================================================
+-- Purchase orders: daily copy of the supply team's PO tracking sheet
+-- (DASHBOARD_SARELLY__OFICIAL, tabs "TRANSITO" and "TRANSITO RECIBIDO ").
+-- Written by sync_pos.py. One-time setup: run this section once.
+--
+-- Every cell is stored as the text people see in the sheet, exactly as typed.
+-- Parsing happens downstream (agent.po_lines in the sarelly-inventory-agent
+-- repo), so a badly typed date never blocks the load and never gets "fixed"
+-- silently. Reading the displayed text also avoids the time zone shift seen
+-- in the SYNC_TRANSITO tab, where 29-May-2026 became 2026-05-28 18:00.
+--
+-- One full copy per day is kept, not overwritten: ~150 rows/day is tiny, and
+-- the history is what shows how ETAs moved over time.
+-- ============================================================================
+
+CREATE TABLE IF NOT EXISTS public.po_lines_raw (
+    id                 BIGINT GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
+    snapshot_date      DATE        NOT NULL,   -- Mexico City date of the sync
+    tab                TEXT        NOT NULL,   -- sheet tab the row came from
+    row_number         INT         NOT NULL,   -- row in the sheet (header = 1)
+    po_number          TEXT,
+    po_date            TEXT,
+    sku                TEXT,
+    description        TEXT,
+    supplier           TEXT,
+    po_qty             TEXT,
+    qty_confirmed      TEXT,
+    status             TEXT,
+    payment_status     TEXT,                   -- the unnamed column after STATUS
+    prepayment_date    TEXT,
+    pickup_ready_date  TEXT,
+    eta                TEXT,
+    final_payment_date TEXT,
+    final_wh           TEXT,
+    comment            TEXT,
+    synced_at          TIMESTAMPTZ NOT NULL DEFAULT now(),
+    UNIQUE (snapshot_date, tab, row_number)
+);
+
+CREATE INDEX IF NOT EXISTS po_lines_raw_date_idx ON public.po_lines_raw (snapshot_date);
+
+REVOKE ALL ON public.po_lines_raw FROM anon, authenticated;
+ALTER TABLE public.po_lines_raw ENABLE ROW LEVEL SECURITY;
